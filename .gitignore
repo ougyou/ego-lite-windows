@@ -1,0 +1,15 @@
+# Node
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+
+# ego-lite runtime state (created at runtime under the user's home)
+ego-cast.json

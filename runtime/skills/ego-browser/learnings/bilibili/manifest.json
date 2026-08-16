@@ -1,0 +1,30 @@
+{
+  "id": "bilibili",
+  "name": "Bilibili",
+  "domains": ["bilibili.com", "*.bilibili.com", "*.b23.tv"],
+  "notes": ["notes/overview.md"],
+  "nodeTools": {
+    "get_recent_video": {
+      "description": "Get the most recently published video of a Bilibili uploader (space UID). Takes only the uploader's own video cards, ignoring the site-wide promoted video at the top of the space page.",
+      "path": "tools/get-recent-video.js",
+      "callable": "getRecentVideo",
+      "args": {
+        "uid": {
+          "type": "integer|string",
+          "required": true,
+          "description": "Uploader space UID, e.g. 28321599."
+        },
+        "pageSize": {
+          "type": "integer",
+          "required": false,
+          "description": "Number of video cards to inspect (default 20)."
+        }
+      },
+      "returns": {
+        "type": "object",
+        "description": "{ bvid, url, title, owner, pubdate } for the newest video."
+      }
+    }
+  },
+  "browserTools": {}
+}
