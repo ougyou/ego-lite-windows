@@ -21,6 +21,8 @@
 | `runtime/ego-linux/src/transport.mjs` | 新增 `openSocketWithRetry()`：`connectCdp()` 打开 browser-level WebSocket 失败时**重试 3 次（间隔 2s）**再放弃；**移除 connectCdp 里残留的"等待 open" promise**（openSocketWithRetry 已确保 socket open，残留的 open 等待对新 socket 永远超时） | CDP 连接可靠性：open 失败多为瞬时竞态（浏览器仍在就绪），重试避免偶发"刚 launch 即连不上"；残留 open 等待是固定端口改造时引入的回归，导致 connectCdp 永远 10s 超时（2026-08-16） |
 | `runtime/ego-linux/src/task-spaces.mjs` | 新增 `reflowSpaceCookies()`：`disposeContext()` 销毁 context 前把该 space 的 cookies 合并回默认 jar；新增 `adoptStartupTarget()`：`EGO_LINUX_START_URL` 冷启动时把默认 context 的启动页认领为第一个 space 的 anchor（共享 jar） | 登录态持久 + 不多开：space 的独立 context 是内存 cookie jar，销毁即丢登录态，先回流默认 jar 才能跨会话继承；首启直达时认领启动页避免“空白页 + 第二个标签页”（2026-08-16） |
 | `runtime/ego-linux/bin/ego-browser.mjs` | 新增 `--url <url>` / 裸 URL 参数解析（设 `EGO_LINUX_START_URL`，`nodejs` 前缀剥离移到其后）；`--stop` 前先把仍存活 space 的 cookies 回流默认 jar 再停浏览器 | 同上：支持 `ego-browser --url <url>` 首启直达；`--stop` 兜底防止浏览器关闭时把 space 登录态一起丢掉（2026-08-16） |
+| `runtime/ego-linux/src/paths.mjs` | 新增 `PERSONAL_PREFS_FILE` / `PERSONAL_STATE_FILE`（`STATE_DIR/personal-browser.json`、`personal-browser-state.json`） | 个人接管模式：用户认可启动档案与其记账状态文件（2026-09-06） |
+| `runtime/ego-linux/src/personal-prefs.mjs` | **新增模块**：`normalizePrefs`/`loadPrefs`/`savePrefs`/`clearPrefs`/`profileMatches`（档案读取/写入/清除 + `--user-data-dir=` 身份核对纯函数）；配单测 `runtime/ego-linux/test/personal-prefs.test.mjs` | 个人接管模式：启动档案"读取优先 / 无则建档 / 每次启动前读取"；接管前身份核对防误接他人 Chrome（2026-09-06） |
 | （其余 runtime 文件）| 与 vendoring 时一致 | 无后续本地改动 |
 
 ## 说明

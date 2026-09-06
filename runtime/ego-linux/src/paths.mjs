@@ -19,6 +19,9 @@ export const PROFILE_DIR = process.env.EGO_LINUX_PROFILE || join(DATA_DIR, "prof
 export const BROWSER_STATE_FILE = join(STATE_DIR, "browser.json");
 export const SPACES_STATE_FILE = join(STATE_DIR, "spaces-server.json");
 export const TASK_SPACE_FILE = join(STATE_DIR, "task-spaces.json");
+/** 个人接管模式：用户认可启动档案（personal-browser.json）与其记账状态文件。 */
+export const PERSONAL_PREFS_FILE = join(STATE_DIR, "personal-browser.json");
+export const PERSONAL_STATE_FILE = join(STATE_DIR, "personal-browser-state.json");
 
 /** Where a stock Chrome keeps the profile we can import logins from. */
 const LOCAL_APPDATA = process.env.LOCALAPPDATA;
