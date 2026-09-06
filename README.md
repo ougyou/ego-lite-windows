@@ -17,20 +17,19 @@ Windows —— 无需 DSH、无需购买、无需构建。
 
 ## 快速开始
 
-```powershell
-# 1. 冒烟验证（无头 Edge/Chrome，开 example.com，读页面信息）
+```cmd
+:: 1. 冒烟验证（无头 Edge/Chrome，开 example.com，读页面信息）
 node scripts\verify.mjs
 
-# 2. 手动跑一段浏览器脚本
-$script = @'
-const task = await taskSpaces.useOrCreate('demo')
-await browser.openOrReuseTab('https://example.com', { wait: true, timeout: 30 })
-console.log(await page.snapshot())
-await taskSpaces.complete(task.id, { keep: false })
-'@
-$script | ego-browser nodejs
+:: 2. 手动跑一段浏览器脚本：把 JS 存成 task.js，再喂 stdin
+::    task.js 内容示例：
+::    const task = await taskSpaces.useOrCreate('demo')
+::    await browser.openOrReuseTab('https://example.com', { wait: true, timeout: 30 })
+::    console.log(await page.snapshot())
+::    await taskSpaces.complete(task.id, { keep: false })
+ego-browser nodejs < task.js
 
-# 3. 停止共享浏览器
+:: 3. 停止共享浏览器
 ego-browser --stop
 ```
 
@@ -39,14 +38,15 @@ ego-browser --stop
 - **首启直达**：`ego-browser --url https://example.com`（或 `ego-browser https://example.com`）— 第一个窗口就是目标页，无空白页。
 - **全程复用**：一个目标一个长驻浏览器，任务（含验证码 handoff）都复用同一窗口，不要反复 `--stop` 重启。
 - **遇验证码/登录**：浏览器停在页面不关闭，用户完成后 agent 用 `takeOver` 继续。
-- **稳定喂脚本**：把脚本写到 `.js` 文件，PowerShell 用 `Get-Content file -Raw | ego-browser nodejs`，cmd 用 `ego-browser nodejs < file`。
+- **稳定喂脚本**：cmd 没有 heredoc，一律把脚本写到 UTF-8 `.js` 文件后用 `ego-browser nodejs < file` 喂 stdin。
 
 ## 让 Copilot 使用
 
-```powershell
-node scripts\verify.mjs                      # 先确认运行时可用
-powershell -ExecutionPolicy Bypass -File scripts\install-copilot-skill.ps1
-# 然后：VS Code 里 "Developer: Reload Window"
+```cmd
+:: 先确认运行时可用，再装 skill
+node scripts\verify.mjs
+scripts\install-copilot-skill.cmd
+:: 然后：VS Code 里 "Developer: Reload Window"
 ```
 
 装好后在 Copilot Chat 里直接说"打开 example.com 抓一下内容"，Copilot 会读取
@@ -64,11 +64,11 @@ ego-lite-windows/
 │   ├── SKILL.md                #   Copilot 读取的主文档（对准实际 facade）
 │   ├── references/             #   facade / task-spaces / windows / install / video
 │   ├── learnings/              #   google、x-com 等站点经验包
-│   └── scripts/install.ps1     #   skill 安装器
+│   └── scripts/install.cmd     #   skill 安装器（cmd）
 ├── scripts/
 │   ├── ego-browser-launch.mjs  # ★ Windows 启动器：找浏览器 + 正斜杠路径 + env 转发
 │   ├── verify.mjs              #   冒烟测试
-│   └── install-copilot-skill.ps1  # 装到 ~/.copilot/skills/ego-browser
+│   └── install-copilot-skill.cmd  # 装到 ~/.copilot/skills/ego-browser
 ├── bin/ego-browser.cmd         # 可加 PATH 的 ego-browser 命令
 └── .copilot/skills/ego-browser/SKILL.md  # 仓库内项目级 Copilot 技能副本
 ```
