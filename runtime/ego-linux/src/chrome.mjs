@@ -4,7 +4,8 @@ import { constants } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
-import { BROWSER_STATE_FILE, PROFILE_DIR, STATE_DIR } from "./paths.mjs";
+import { BROWSER_STATE_FILE, PERSONAL_STATE_FILE, PROFILE_DIR, STATE_DIR } from "./paths.mjs";
+import { loadPrefs, profileMatches } from "./personal-prefs.mjs";
 
 const BINARY_CANDIDATES = [
   process.env.EGO_LINUX_CHROME,
@@ -928,4 +929,214 @@ export async function browserStatus() {
     return { running: true, ...state, endpointUnknown: true, pid: live[0].pid };
   }
   return { running: false, ...state };
+}
+
+// --- Personal takeover mode -------------------------------------------------
+// Default mode: drive the user's own workspace-profile Chrome (attached if it
+// is already running, launched per the archived personal-browser.json if not).
+// The isolated ego-profile behaviour stays reachable via EGO_LINUX_PERSONAL=0
+// (the CLI's --isolated), and EGO_LINUX_CDP_URL still forces a direct attach.
+
+/**
+ * Is personal mode enabled? Defaults to on; EGO_LINUX_PERSONAL=0/false/no turns
+ * it off (the CLI sets this when --isolated is given).
+ */
+function personalEnabled() {
+  const v = (process.env.EGO_LINUX_PERSONAL ?? "").toLowerCase();
+  return !["0", "false", "no"].includes(v);
+}
+
+/**
+ * Pure filter over a CIM row list (Win32_Process JSON): keep main browser
+ * processes listening on `port`, optionally restricted to `userDataDir`.
+ * Exported separately from the CIM call so it is unit-testable without a
+ * running PowerShell.
+ *
+ * @param {Array<{ProcessId:number,CommandLine:string}>} rows
+ * @returns {Array<{pid:number, cmdline:string}>}
+ */
+export function parseWinCimChrome(rows, { port, userDataDir } = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  return list
+    .filter((p) => p && typeof p.CommandLine === "string")
+    .filter((p) => p.CommandLine.includes(`--remote-debugging-port=${port}`))
+    .filter((p) => !p.CommandLine.match(/(?:^|\s)--type=/))
+    .filter((p) =>
+      userDataDir ? profileMatches(p.CommandLine, userDataDir) : true,
+    )
+    .map((p) => ({ pid: Number(p.ProcessId), cmdline: p.CommandLine }));
+}
+
+/** Main Chrome processes currently listening on `port` (Windows only). */
+export async function findChromeMainOnPort(port) {
+  if (process.platform !== "win32") return [];
+  try {
+    const r = spawnSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '--remote-debugging-port=${port}' -and $_.CommandLine -notmatch '--type=' } | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress`,
+      ],
+      {
+        encoding: "utf8",
+        timeout: 10_000,
+        windowsHide: true,
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+    if (r.status !== 0) return [];
+    const parsed = JSON.parse(r.stdout || "[]");
+    const rows = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [];
+    return parseWinCimChrome(rows, { port });
+  } catch {
+    return [];
+  }
+}
+
+/** Report the personal-mode situation without touching any browser. */
+export async function personalStatus() {
+  const prefs = await loadPrefs();
+  if (!prefs) {
+    return {
+      prefsExists: false,
+      debugPort: null,
+      running: false,
+      ours: false,
+      attachable: false,
+      reason: "no-prefs",
+    };
+  }
+  const wsUrl = await probe(prefs.debugPort);
+  if (!wsUrl) {
+    return {
+      prefsExists: true,
+      debugPort: prefs.debugPort,
+      running: false,
+      ours: false,
+      attachable: false,
+    };
+  }
+  const hit = await findChromeMainOnPort(prefs.debugPort);
+  const mine = hit.find((p) => profileMatches(p.cmdline, prefs.userDataDir));
+  if (mine) {
+    return {
+      prefsExists: true,
+      debugPort: prefs.debugPort,
+      running: true,
+      ours: false,
+      attachable: true,
+    };
+  }
+  return {
+    prefsExists: true,
+    debugPort: prefs.debugPort,
+    running: true,
+    ours: false,
+    attachable: false,
+    reason: "port-owned-by-other-profile",
+  };
+}
+
+/**
+ * Launch the user's workspace Chrome from the archived prefs and wait for its
+ * DevTools endpoint. Records ownership in PERSONAL_STATE_FILE so --stop knows
+ * this instance was started by ego and may be closed gracefully.
+ */
+async function launchPersonal(prefs, { startUrl = null, headless = false } = {}) {
+  const args = [
+    ...prefs.flags,
+    `--user-data-dir=${prefs.userDataDir}`,
+    `--remote-debugging-port=${prefs.debugPort}`,
+    ...(headless ? ["--headless=new"] : []),
+    startUrl || "about:blank",
+  ];
+  const child = spawn(prefs.binary, args, { detached: true, stdio: "ignore" });
+  child.unref();
+  const { port, wsUrl } = await waitForPortReady(prefs.debugPort);
+  await mkdir(STATE_DIR, { recursive: true });
+  await writeFile(
+    PERSONAL_STATE_FILE,
+    JSON.stringify(
+      {
+        port,
+        pid: child.pid,
+        binary: prefs.binary,
+        userDataDir: prefs.userDataDir,
+        startedByEgo: true,
+      },
+      null,
+      2,
+    ),
+  );
+  return { wsUrl, port, launched: true, owned: true, mode: "personal" };
+}
+
+/**
+ * The single backing-browser resolver used by every personal-mode entry.
+ *
+ * Returns a live CDP endpoint, reusing the user's already-running workspace
+ * Chrome when one is there (identity-checked), launching it per the archived
+ * prefs when not, or falling back to the isolated ego-profile behaviour when
+ * personal mode is disabled.
+ */
+export async function resolveBackingBrowser({
+  headless = false,
+  startUrl = null,
+} = {}) {
+  if (process.env.EGO_LINUX_CDP_URL) {
+    return {
+      wsUrl: process.env.EGO_LINUX_CDP_URL,
+      port: null,
+      launched: false,
+      owned: false,
+      mode: "personal",
+    };
+  }
+  if (!personalEnabled()) {
+    const r = await ensureBrowser({ headless });
+    return { ...r, owned: true, mode: "isolated" };
+  }
+  const prefs = await loadPrefs();
+  if (!prefs) {
+    const err = new Error(
+      "no personal-browser.json; run `ego-browser --prefs <json>` (ask the user first)",
+    );
+    err.code = "NO_PREFS";
+    throw err;
+  }
+  const wsUrl = await probe(prefs.debugPort);
+  if (wsUrl) {
+    const hit = await findChromeMainOnPort(prefs.debugPort);
+    const mine = hit.find((p) => profileMatches(p.cmdline, prefs.userDataDir));
+    if (!mine) {
+      throw new Error(
+        `port ${prefs.debugPort} is owned by another Chrome/profile; refusing to attach (identity check failed)`,
+      );
+    }
+    return {
+      wsUrl,
+      port: prefs.debugPort,
+      launched: false,
+      owned: false,
+      mode: "personal",
+    };
+  }
+  return launchPersonal(prefs, { startUrl, headless });
+}
+
+/**
+ * Gracefully close a personal-mode browser that ego itself launched. An
+ * externally-started (attached-only) instance is never touched here.
+ */
+export async function stopPersonalBrowser() {
+  try {
+    const state = JSON.parse(await readFile(PERSONAL_STATE_FILE, "utf8"));
+    if (!state?.startedByEgo) return { stopped: false, detached: true };
+    const ok = await closeBrowserGracefully(state.port);
+    await rm(PERSONAL_STATE_FILE, { force: true });
+    return { stopped: ok, detached: false };
+  } catch {
+    return { stopped: false, detached: false };
+  }
 }
