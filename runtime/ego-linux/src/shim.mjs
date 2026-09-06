@@ -14,8 +14,9 @@ import { createWindowFit } from "./window-fit.mjs";
  * one of them is implemented or explicitly degraded here. See README.md for the
  * per-method fidelity table.
  */
-export async function createEgoShim({ headless = false } = {}) {
-  const { wsUrl, port } = await ensureBrowser({ headless });
+export async function createEgoShim({ headless = false, endpoint = null } = {}) {
+  const resolved = endpoint || (await ensureBrowser({ headless }));
+  const { wsUrl, port } = resolved;
   const cdp = await connectCdp(wsUrl);
 
   const taskSpaces = createTaskSpacesApi(cdp);

@@ -941,7 +941,7 @@ export async function browserStatus() {
  * Is personal mode enabled? Defaults to on; EGO_LINUX_PERSONAL=0/false/no turns
  * it off (the CLI sets this when --isolated is given).
  */
-function personalEnabled() {
+export function personalEnabled() {
   const v = (process.env.EGO_LINUX_PERSONAL ?? "").toLowerCase();
   return !["0", "false", "no"].includes(v);
 }

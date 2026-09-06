@@ -14,7 +14,8 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { browserStatus, stopBrowser } from "../src/chrome.mjs";
+import { browserStatus, personalEnabled, personalStatus, resolveBackingBrowser, stopBrowser, stopPersonalBrowser } from "../src/chrome.mjs";
+import { clearPrefs, savePrefs } from "../src/personal-prefs.mjs";
 import { installDesktopEntry } from "../src/desktop.mjs";
 import {
   CHROME_CONFIG_CANDIDATES,
@@ -48,6 +49,9 @@ Linux-only commands:
                             EGO_LINUX_SPACE_IDLE_MIN to change the window, or
                             0 to sweep only by hand
   --stop                    stop the backing browser
+  --prefs <json>            save the personal launch prefs (user-confirmed)
+  --prefs-clear             clear the personal launch prefs
+  --isolated                run the isolated ego profile instead of personal mode
   --import-chrome-profile   copy your real Chrome profile in, to inherit logins
   --install-desktop-entry   add it to your app launcher, with an icon
   --headless                run the backing browser headless (first launch only)
@@ -303,10 +307,42 @@ async function main() {
     return 0;
   }
   if (argv[0] === "--status") {
-    process.stdout.write(`${JSON.stringify(await browserStatus(), null, 2)}\n`);
+    const status = await browserStatus();
+    const personal = await personalStatus();
+    process.stdout.write(`${JSON.stringify({ ...status, personal }, null, 2)}\n`);
+    return 0;
+  }
+  if (argv[0] === "--prefs") {
+    if (!argv[1]) {
+      process.stderr.write("--prefs requires a JSON object\n");
+      return 2;
+    }
+    try {
+      await savePrefs(JSON.parse(argv[1]));
+      process.stdout.write("prefs saved\n");
+      return 0;
+    } catch (error) {
+      process.stderr.write(`invalid prefs: ${error.message}\n`);
+      return 2;
+    }
+  }
+  if (argv[0] === "--prefs-clear") {
+    await clearPrefs();
+    process.stdout.write("prefs cleared\n");
     return 0;
   }
   if (argv[0] === "--stop") {
+    if (personalEnabled()) {
+      const res = await stopPersonalBrowser();
+      if (res.detached) {
+        process.stdout.write("attached only; your browser was NOT stopped\n");
+      } else if (res.stopped) {
+        process.stdout.write("ego-launched personal browser stopped\n");
+      } else {
+        process.stdout.write("no ego-launched personal browser to stop\n");
+      }
+      return 0;
+    }
     // A space's logins live in its in-memory context jar, so shutting the
     // browser down with spaces still open would drop them — they never reach
     // the persistent default jar on their own. Reflow every live space's
@@ -407,8 +443,14 @@ async function main() {
   const envHeadless = !["", "0", "false", "no"].includes(
     (process.env.EGO_LINUX_HEADLESS ?? "").toLowerCase(),
   );
+  // --isolated: drop out of the default personal mode into the isolated
+  // ego-profile behaviour. personalEnabled() reads the env, so set it here
+  // before any resolver consults it.
+  if (argv.includes("--isolated")) process.env.EGO_LINUX_PERSONAL = "0";
   const headless = argv.includes("--headless") || envHeadless;
-  const rest = argv.filter((arg) => arg !== "--headless");
+  const rest = argv.filter(
+    (arg) => arg !== "--headless" && arg !== "--isolated",
+  );
 
   // `--sdk-path <file>` selects which harness bundle to run. Upstream's real
   // browser e2e runner passes it to test a local build; here the local build is
@@ -428,7 +470,30 @@ async function main() {
   // Site skills and learnings live in the repo's skill directory.
   process.env.EGO_BROWSER_AGENT_WORKSPACE ||= SKILL_WORKSPACE.pathname;
 
-  const shim = await createEgoShim({ headless });
+  let shim;
+  if (personalEnabled()) {
+    // Personal mode: attach to the user's running workspace Chrome if it is
+    // there (identity-checked), else launch it per the archived prefs. Never
+    // guess a launch command when no prefs exist — ask the user first.
+    let endpoint;
+    try {
+      endpoint = await resolveBackingBrowser({
+        headless,
+        startUrl: process.env.EGO_LINUX_START_URL || null,
+      });
+    } catch (error) {
+      if (error?.code === "NO_PREFS") {
+        process.stderr.write(
+          "NO_PREFS: no personal-browser.json. Ask the user for their usual launch command, then save it with: ego-browser --prefs \"{...}\"\n",
+        );
+        return 2;
+      }
+      throw error;
+    }
+    shim = await createEgoShim({ headless, endpoint });
+  } else {
+    shim = await createEgoShim({ headless });
+  }
   globalThis.ego = shim.ego;
 
   const { runMain } = await import(harness);
