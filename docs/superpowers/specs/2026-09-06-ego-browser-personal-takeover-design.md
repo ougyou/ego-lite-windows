@@ -229,3 +229,15 @@ flowchart TD
 - **R3** 多副本同步遗漏导致生效技能与新行为不一致——以 `~/.copilot/skills/ego-browser/` 为生效
   校验目标，安装脚本若存在则复用。
 - **R4** personal 默认后，原依赖 isolated 的脚本/文档需同步迁移说明。
+
+## 实现状态
+
+- **已实现（2026-09-06）**，提交：`3b6181e`（spike）、`a4b331f`（prefs 模块）、`4de544d`
+  （resolveBackingBrowser）、`febaaf0`（CLI/shim 接线）、`9412c22`（伪空间 adopt）、`4dd41ef`
+  （verify-personal E2E + 旧 verify 强制 isolated）、`7d7343c`（技能四份副本 + references +
+  AGENTS）。
+- spike 结论 = PASS（`docs/superpowers/spikes/2026-09-06-personal-takeover-findings.md`）。
+- 回归证据：`node --test runtime/ego-linux/test/personal-prefs.test.mjs`（4/4）、
+  `node --test runtime/ego-linux/test/chrome-personal.test.mjs`（2/2）、
+  `node scripts/verify-personal.mjs`（PASS）、`node scripts/verify.mjs`（isolated PASS exit 0）。
+- 真实 chrome_workspace 只读冒烟（Task 8 Step 2）：需用户在场，**待办**。
