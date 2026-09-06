@@ -20,6 +20,19 @@ export async function createEgoShim({ headless = false, endpoint = null } = {}) 
   const cdp = await connectCdp(wsUrl);
 
   const taskSpaces = createTaskSpacesApi(cdp);
+  // Personal takeover mode (an injected endpoint): fold the browser's existing
+  // default-context tabs into a NON-isolated "personal" space, so the very
+  // first browser.listTabs() already shows the user's open tabs (login/session
+  // reuse, no duplicates). Isolated mode (endpoint === null) keeps the normal
+  // empty task-space start. Adoption is best-effort — on failure listTabs just
+  // falls back to unscoped page targets, which still lists the tabs.
+  if (endpoint) {
+    await taskSpaces
+      .adoptPersonalSpace("personal")
+      .catch((error) =>
+        console.warn(`personal space adoption skipped: ${error?.message || error}`),
+      );
+  }
   // Downloads are armed per browser context, and a space owns one — so the
   // harness's context-less setDownloadBehavior has to be aimed at the space the
   // agent is actually in. See aimDownloadsAtCurrentSpace in transport.mjs.

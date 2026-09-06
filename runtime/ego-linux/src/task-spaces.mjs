@@ -542,6 +542,72 @@ export function createTaskSpacesApi(cdp) {
       return { taskSpaces: state.spaces.map((space) => decorate(space, live)) };
     },
 
+    /**
+     * Personal takeover mode: make the default-context tabs the "working set".
+     *
+     * Ego's spaces normally isolate work in a fresh browser context. Personal
+     * mode is the opposite — the user wants their own workspace Chrome driven
+     * in place, reusing the tabs they already have open. This creates (or
+     * reuses) a deliberately NON-isolated space named `name` whose membership
+     * is exactly the browser's current default-context page targets, and makes
+     * it the selected space. Nothing is closed or modified; a tab the user
+     * closes simply drops out of the list on the next run, and a tab the agent
+     * opens (createTab without a context -> default jar) joins it automatically.
+     *
+     * Repeated every heredoc is fine: membership is recomputed from live
+     * targets, so it is idempotent.
+     */
+    async adoptPersonalSpace(name = "personal") {
+      const state = await readState();
+      let space = state.spaces.find((s) => s.id === name || s.name === name);
+      const { targetInfos = [] } = await cdp.call("Target.getTargets");
+      const { browserContextIds = [] } = await cdp
+        .call("Target.getBrowserContexts")
+        .catch(() => ({ browserContextIds: [] }));
+      // The default context is not the one with an empty id: stock Chrome
+      // reports a real id for it too. What is unique is that
+      // Target.createBrowserContext never made it (same test as
+      // adoptStartupTarget above).
+      const created = new Set(browserContextIds);
+      const defaultPages = targetInfos.filter(
+        (target) =>
+          target.type === "page" &&
+          !target.url.startsWith("devtools://") &&
+          (!target.browserContextId || !created.has(target.browserContextId)),
+      );
+      const ids = [...new Set(defaultPages.map((t) => t.targetId))];
+      const now = Date.now();
+      const hasRealContent = defaultPages.some(
+        (t) => t.url && t.url !== "about:blank",
+      );
+      if (!space) {
+        space = {
+          id: name,
+          name,
+          ownership: "agent",
+          createdBy: "agent",
+          // Non-isolated: shares the default jar (logins/session reuse).
+          browserContextId: null,
+          targetIds: ids,
+          urls: defaultPages.map((t) => t.url),
+          createdAt: now,
+          touchedAt: now,
+          ...(hasRealContent ? { lastContentAt: now } : {}),
+        };
+        state.spaces.push(space);
+      } else {
+        space.browserContextId = null; // never let personal become isolated
+        space.targetIds = ids;
+        space.urls = defaultPages.map((t) => t.url);
+        space.touchedAt = now;
+        if (hasRealContent) space.lastContentAt = space.lastContentAt || now;
+      }
+      state.selectedId = space.id;
+      pinnedSpaceId = space.id;
+      await writeState(state);
+      return { id: space.id };
+    },
+
     async createTaskSpace(name) {
       const state = await readState();
 

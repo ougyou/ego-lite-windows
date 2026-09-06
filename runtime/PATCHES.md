@@ -26,6 +26,8 @@
 | `runtime/ego-linux/src/paths.mjs` | 新增 `PERSONAL_PREFS_FILE` / `PERSONAL_STATE_FILE`（`STATE_DIR/personal-browser.json`、`personal-browser-state.json`） | 个人接管模式：用户认可启动档案与其记账状态文件（2026-09-06） |
 | `runtime/ego-linux/src/personal-prefs.mjs` | **新增模块**：`normalizePrefs`/`loadPrefs`/`savePrefs`/`clearPrefs`/`profileMatches`（档案读取/写入/清除 + `--user-data-dir=` 身份核对纯函数）；配单测 `runtime/ego-linux/test/personal-prefs.test.mjs` | 个人接管模式：启动档案"读取优先 / 无则建档 / 每次启动前读取"；接管前身份核对防误接他人 Chrome（2026-09-06） |
 | `runtime/ego-linux/src/chrome.mjs` | **个人接管模式**：新增 `personalEnabled()`（默认开，`EGO_LINUX_PERSONAL=0`/CLI `--isolated` 关）、`parseWinCimChrome()`/`findChromeMainOnPort()`（泛化端口进程枚举 + profile 过滤，纯函数配单测 `chrome-personal.test.mjs`）、`personalStatus()`（只 probe 不 launch 的报告）、`resolveBackingBrowser()`（统一入口：`EGO_LINUX_CDP_URL`→直连；personal→读档案→probe 端口→身份核对后接管 / 无则按档案启动；isolated→原 `ensureBrowser()`）、`launchPersonal()`（按档案启动并写 `PERSONAL_STATE_FILE` 记账）、`stopPersonalBrowser()`（只优雅关 ego 自启实例，外部实例只断开） | 个人接管模式：默认接管用户 workspace Chrome（复用登录态/现有 tab），不弹空白窗；身份核对防误接；外部实例绝不杀（2026-09-06） |
+| `runtime/ego-linux/src/task-spaces.mjs` | **新增 `adoptPersonalSpace(name="personal")`**：建立/复用**非隔离** space（`browserContextId=null`），把浏览器当前**默认 context** 的 page target（非 devtools、非 createBrowserContext 产物）登记为其成员并置为 selected/pinned；幂等，每次 heredoc 重算成员；配集成验证（spike `docs/superpowers/spikes/2026-09-06-personal-takeover-findings.md` 与 Task 5 E2E） | 个人接管模式：就地驱动现有 tab、复用登录态/会话；新 tab 落默认 context 并被跟踪；不改不关用户原有 tab（2026-09-06） |
+| `runtime/ego-linux/src/shim.mjs` | personal（注入 `endpoint`）时在 shim 装配末尾自动 `await taskSpaces.adoptPersonalSpace("personal")`（best-effort，失败回落无 scope 全量列 tab） | 个人接管模式：脚本第一步 `browser.listTabs()` 即见用户现有 tab（2026-09-06） |
 | （其余 runtime 文件）| 与 vendoring 时一致 | 无后续本地改动 |
 
 ## 说明
