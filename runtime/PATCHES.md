@@ -36,3 +36,7 @@
 - **同步提醒**：`lib/index.js` 与 `bin/ego-cast-worker.mjs` 各有一份 humanCheck 探针（逻辑相似）——
   若改探针特征，两处都要同步。
 - 若要跟进 ego-lite 上游，重点 diff 上表的 cursor.mjs；其余文件可直接与上游对齐。
+- **仓库级（非 vendored）配套**（2026-09-06，个人接管模式）：新增
+  `scripts/verify-personal.mjs`（personal E2E，隔离临时 Chrome，`package.json` 加
+  `verify:personal`）；`scripts/verify.mjs` 与 `scripts/verify-single-instance.mjs` 的 spawn env
+  注入 `EGO_LINUX_PERSONAL=0`（这两个回归驱动的是 isolated ego profile，须显式关掉 personal 默认）。

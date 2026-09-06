@@ -12,10 +12,11 @@
   },
   "scripts": {
     "verify": "node scripts/verify.mjs",
+    "verify:personal": "node scripts/verify-personal.mjs",
     "status": "node scripts/ego-browser-launch.mjs --status",
     "stop": "node scripts/ego-browser-launch.mjs --stop",
     "open": "node scripts/ego-browser-launch.mjs --open",
-    "setup:copilot": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-copilot-skill.ps1",
+    "setup:copilot": "scripts/install-copilot-skill.cmd",
     "doctor": "node scripts/ego-browser-launch.mjs --status"
   },
   "license": "MIT"

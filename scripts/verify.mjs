@@ -32,7 +32,7 @@ function run() {
     const child = spawn(
       process.execPath,
       [LAUNCHER, "--headless", "nodejs"],
-      { stdio: ["pipe", "pipe", "inherit"], env: { ...process.env } },
+      { stdio: ["pipe", "pipe", "inherit"], env: { ...process.env, EGO_LINUX_PERSONAL: "0" } },
     );
     let out = "";
     child.stdout.on("data", (d) => (out += d));

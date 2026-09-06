@@ -43,7 +43,8 @@ function runEgo(args, script = "") {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [LAUNCHER, ...args], {
       stdio: ["pipe", "pipe", "inherit"],
-      env: { ...process.env },
+      // verify-single-instance drives the isolated ego profile; force isolated.
+      env: { ...process.env, EGO_LINUX_PERSONAL: "0" },
     });
     let out = "";
     child.stdout.on("data", (d) => (out += d));
