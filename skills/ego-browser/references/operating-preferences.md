@@ -90,3 +90,12 @@ ego-browser --headless nodejs < task.js
   `ego-browser --prefs "{...}"` 建档；之后每次启动前读取。禁止猜默认命令、禁止无档案擅自启动。
 - **外部实例绝不杀**：`--stop` 只关 ego 自启实例；外部用户浏览器只"断开"。不 import、不改其 profile 数据。
 - 需要 ego 隔离 profile 旧行为：`--isolated` 或 `EGO_LINUX_PERSONAL=0`。
+
+## 10. 打开后延时确认 + 及时纠错（2026-09-06 · 硬规则）
+
+- **打开页 = 三确认**：`openOrReuseTab`/`goto` 后延时 2–5s，再确认 ① URL 到位 ② 非假成功信号
+  （非 about:blank、title 非空且无错误码）③ **内容级**（body 文本 > 80 或关键元素/播放器出现）。
+- **绝不只凭 URL/title 宣布成功**：真实案例 B 站视频页 title 正确但 body=0/无播放器（网络白屏假成功）。
+- **及时纠错（≤3 次）**：URL 未到位→重 goto；内容空白→同 URL 强制重载（勿等 networkidle）→复检；仍空→关 tab 用干净 URL（去 spm）重开；再失败把实测状态告诉用户，不假装成功。
+- 白屏若为登录/验证码墙→按人工介入 SOP 留页给用户。
+- 详见 SKILL.md「Open → Verify → Correct」。

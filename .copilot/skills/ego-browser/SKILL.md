@@ -86,6 +86,45 @@ ego-browser --url https://example.com nodejs < task.js
 接管时不建隔离 task space（而是非隔离"个人空间"，登录/会话与你的浏览器共享）。需要 ego 隔离
 profile 的旧行为时用 `ego-browser --isolated ...`（或 `EGO_LINUX_PERSONAL=0`）。
 
+## Open → Verify → Correct（打开后延时确认 + 及时纠错 · 硬规则）
+
+**问题**：网络不稳/资源加载失败时，地址栏已是目标 URL、`title` 也对，但页面正文其实空白
+（body≈0、无播放器/关键内容）——"假成功"（真实案例：B 站视频页 title 正确但 body=0、player=false）。
+**绝不只凭 URL/title 就宣布"页面已打开"。**
+
+1. **打开即延时确认**：`openOrReuseTab(url,{wait:true})` / `page.goto(url)` **之后先延时 2–5s** 再确认，三步：
+   - ① URL 到位：轮询 `page.url()`/目标 tab 到目标（容忍 http↔https、尾斜杠、`?spm_id_from` 等变体）；
+   - ② 非假成功信号：不是 `about:blank`/上一页；`title` 非空且不含 `ERR_|502|503|404|无法访问|连接被重置`；
+   - ③ **内容级确认**：`body.innerText.length > 80` 或目标关键元素出现（播放器 `video`/`#bilibili-player`、
+     搜索结果的用户卡片等）。
+2. **发现问题及时纠正（最多 ~3 次）**：
+   - URL 没到位 → 重新 `goto`/重开，间隔 2–3s；
+   - URL 到位但内容空白 → `page.goto(同一 URL)` 强制整页重载（**别等 networkidle**，网络差时永不 idle），等 4–6s 复检；
+   - 仍空白 → **关掉该 tab，用干净 URL（去 spm/追踪参数）新开 tab** 再复检；
+   - 多次失败 → 把**实测状态**（URL/title/body 长度/是否有播放器/报错）如实告诉用户，**不假装成功**。
+3. 白屏若是**登录/验证码墙** → 按"人工介入 SOP"把页面留给你，不做无意义自动重试。
+4. 示例（"打开+复检+重试"最小闭环，已在真实 B 站视频页验证有效）：
+
+```js
+const toArr = (x) => (Array.isArray(x) ? x : (x && x.tabs) || [])
+const norm = (u) => (u || '').split('?')[0].replace(/\/+$/, '') // 忽略 spm/追踪参数与尾斜杠
+const openVerified = async (url, { tries = 3 } = {}) => {
+  const target = norm(url)
+  for (let i = 1; i <= tries; i++) {
+    await browser.openOrReuseTab(url, { wait: true, timeout: 60 }).catch(() => {})
+    await new Promise((r) => setTimeout(r, 4000)) // 延时确认
+    const tab = toArr(await browser.listTabs()).find((x) => norm(x.url) === target)
+    if (tab) await browser.switchTab(tab.targetId).catch(() => {})
+    const s = await page.evaluate(`({ body: (document.body?document.body.innerText:'').length, player: !!document.querySelector('video, #bilibili-player, .bpx-player-container') })`).catch(() => ({}))
+    if (tab && !/about:blank/.test(tab.url || '') && ((s.body || 0) > 80 || s.player)) return tab
+    if (i < tries) await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60 }).catch(() => {})
+  }
+  return null // null = 实测仍空白 → 向用户报告实际状态，不要假装成功
+}
+```
+
+`--url` 首启直达同样适用：第一个窗口打开后先复检内容，白屏即按上面纠错。
+
 ## Quick start
 
 ```js
