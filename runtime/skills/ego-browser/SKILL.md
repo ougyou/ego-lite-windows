@@ -25,17 +25,11 @@ Windows path, and forwards stdin to the runtime.
 > for, or construct a path to, the launcher script (`scripts\ego-browser-launch.mjs`).
 > If the command is not found (`'ego-browser' is not recognized`), stop and tell
 > the user to put the repo's `bin\` folder on PATH (or run
-> `scripts\install-copilot-skill.ps1`, which adds it automatically) — do not fall
+> `scripts\install-copilot-skill.cmd`, which adds it automatically) — do not fall
 > back to hunting for scripts.
 
-```powershell
-$script = @'
-...js...
-'@
-$script | ego-browser nodejs
-```
-
-cmd uses stdin redirection for the same shell-agnostic flow:
+cmd has no inline heredoc. Write the JS to a UTF-8 `.js` file (e.g. under
+`%TEMP%`) and feed it on stdin:
 
 ```cmd
 ego-browser nodejs < task.js
@@ -45,23 +39,52 @@ ego-browser nodejs < task.js
 > cd into the repo root.
 
 Other commands (same as the runtime): `--status`, `--open`, `--stop`,
-`--headless`, `--import-chrome-profile`, `--doctor`, and `--url <url>`.
+`--headless`, `--import-chrome-profile`, `--doctor`, `--url <url>`, and the
+personal-mode `--prefs <json>` / `--prefs-clear` / `--isolated`.
 Full Windows notes in [references/windows.md](references/windows.md).
 
 **First-run direct to a page**: `ego-browser --url <url>` (or just
 `ego-browser <url>`) makes the browser cold-start on that page instead of a
 blank `about:blank` window, so the first window is already the page — no empty
-browser first, no second browser to reach it. Combined with a heredoc it reuses
-that very tab:
+browser first, no second browser to reach it. Combined with a script file it
+reuses that very tab:
 
-```powershell
-$script = @'
+```js
+// task.js
 const task = await taskSpaces.useOrCreate('my goal')
 console.log((await browser.listTabs()).map(t => t.url))
 await taskSpaces.complete(task.id, { keep: false })
-'@
-$script | ego-browser --url https://example.com nodejs
 ```
+
+```cmd
+ego-browser --url https://example.com nodejs < task.js
+```
+
+## Personal takeover mode (default · 个人接管模式)
+
+默认情况下 ego-browser 驱动**你自己的 workspace Chrome**（按启动档案
+`personal-browser.json`，即用户认可的 profile 目录），而不是 ego 隔离 profile。硬规则：
+
+1. **开场不预热**：任何浏览器任务的第一步就是"静默探测 + 接管/直达启动"
+   （`ego-browser [<url>] nodejs < task.js` 内部自动完成，探测只 probe 不弹窗）；
+   **禁止**单独 `--open` 或空脚本预热；健康检查只用无副作用的 `ego-browser --status`。
+2. **接管后先列 tab**：脚本**第一行**先 `console.log(await browser.listTabs())` ——
+   该调用**直接返回数组**（每项 `{ targetId, title, url, active }`）。据此复用现有 tab、
+   决定是否开新页，**避免重复/多开**用户所需页面。
+3. **首用建档（硬规则）**：`ego-browser --status` 显示 `personal.prefsExists: false` 时
+   → **停下，用中文向用户征询**惯常启动命令（二进制 / 端口 / workspace profile 目录 /
+   附加 flag）→ 用户确认 → `ego-browser --prefs "<json>"` 建档 → 继续。**禁止**猜默认
+   命令、**禁止**无档案擅自启动（CLI 会 exit 2 提示建档）。
+4. **授权边界**：只操作档案里的 workspace profile（接管其**已加载登录态/会话**与已开 tab，
+   直接操作）；`--stop` 只对 ego 自启实例生效，**外部已存在的用户实例绝不 kill**（只断开）；
+   不 `--import-chrome-profile`、不改其 profile 数据。
+5. **无浏览器在跑时**：按档案冷启动同一个 workspace profile（首窗直达目标页，不弹空白窗）。
+6. **tab 卫生**：不关用户原有 tab；只清理本任务新开/重试产生的 tab
+   （`browser.closeTab(targetId)`）。
+7. **人工步骤**：验证码/登录等把当前 tab 留给你（不关闭、不 `--stop`），完成后接回同一 tab 继续。
+
+接管时不建隔离 task space（而是非隔离"个人空间"，登录/会话与你的浏览器共享）。需要 ego 隔离
+profile 的旧行为时用 `ego-browser --isolated ...`（或 `EGO_LINUX_PERSONAL=0`）。
 
 ## Quick start
 
@@ -111,19 +134,6 @@ Task-space ownership & handoff policy: [references/task-spaces.md](references/ta
    runtime. Final results must go through `console.log`. Do not rely on
    `process.stdout.write` or print huge dumps.
 
-## 可选：本地 OCR / 视觉能力（vision skill）
-
-本仓库自带独立的 `vision` skill（`ego-vision ocr <图片>`，本地离线 OCR，输出文本+坐标）。
-**纯可选、不强制**——默认仍用 `page.snapshot()` 语义树；仅当需要读取截图/图片内嵌文字
-（canvas、视频画面、无 DOM 文本）或模型无视觉时才用：
-
-```js
-await page.screenshot({ path: 'C:/tmp/shot.png' })
-// 然后（终端/另一脚本）：ego-vision ocr C:/tmp/shot.png --find "确认"
-```
-
-详见 `~/.copilot/skills/ego-vision/`（或仓库 `ego-vision/ego-vision/`）。
-
 ## Startup and reuse
 
 - Start **one** browser process per task space and **reuse it**. Do not open a
@@ -155,19 +165,12 @@ await page.screenshot({ path: 'C:/tmp/shot.png' })
   whole task (including handoff round-trips). Never `--stop`/restart the
   browser just to continue a task.
 
-## Stable script execution (shell-agnostic)
+## Stable script execution (cmd)
 
-Avoid inline heredocs whose quoting differs between PowerShell and cmd. Write
-the script to a UTF-8 `.js` file once and feed it on stdin — identical in every
-shell:
-
-```powershell
-# PowerShell
-Get-Content task.js -Raw | ego-browser nodejs
-```
+cmd has no inline heredoc, so always write the script to a UTF-8 `.js` file
+once and feed it on stdin:
 
 ```cmd
-:: cmd
 ego-browser nodejs < task.js
 ```
 
@@ -236,7 +239,7 @@ console.log(await page.snapshot()) // continue from where the user left off
    只保留最终结果页。
 3. **收尾 space**：用独立的最终 heredoc 跑 `taskSpaces.complete(task.id,
    { keep: true })`（用户需要保留页面时；默认 `keep: false`）。
-4. **清理临时脚本**：任务临时脚本默认写 `$env:TEMP/ego-browser-<task>/`
+4. **清理临时脚本**：任务临时脚本默认写 `%TEMP%\ego-browser-<task>\`
    （不进仓库），收尾删除该目录；产物（截图 / 下载）保留到仓库可见位置
    （如 `<repo>/<task>_task/` 或用户指定）。
 5. **沉淀经验（可选）**：本次验证过的新站点知识（选择器、坑、正确流程）写入

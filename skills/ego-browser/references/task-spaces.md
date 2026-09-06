@@ -82,7 +82,7 @@ tabs so only the pages worth showing stay open. Close a single tab with
 or an `openOrReuseTab` return value).
 
 **临时脚本清理**：任务中写的临时操作脚本默认放
-`$env:TEMP/ego-browser-<task>/`（不进仓库），任务收尾时删除该目录；产物
+`%TEMP%\ego-browser-<task>\`（不进仓库），任务收尾时删除该目录；产物
 （截图 / 下载）保留到仓库可见位置。完整收尾清单见 `SKILL.md`「任务收尾清单」。
 
 ## Control handoff

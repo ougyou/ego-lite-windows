@@ -29,14 +29,22 @@ fixes this: it probes the standard install locations and hands the runtime a
 **Always invoke `ego-browser` from PATH** (once `bin\` is on PATH). Do **not**
 search the repo for the launcher script:
 
-```powershell
-ego-browser nodejs                    # heredoc on stdin
-ego-browser --status                  # connection state
-ego-browser --open                    # show the agent window (login / manual use)
-ego-browser --stop                    # stop the shared browser
-ego-browser --url https://example.com # first run opens the page directly
-ego-browser https://example.com       # same, without the flag
+```cmd
+ego-browser nodejs
+ego-browser --status
+ego-browser --open
+ego-browser --stop
+ego-browser --url https://example.com
+ego-browser https://example.com
+ego-browser --prefs "{...}"   :: 首次建档（先征询用户）
+ego-browser --prefs-clear      :: 清除档案
+ego-browser --isolated ...    :: 切回 ego 隔离 profile 旧行为
 ```
+
+**个人接管模式（默认）**：`ego-browser` 默认接管/启动你自己的 workspace Chrome（按 `--prefs`
+建档的 profile，见 SKILL.md「Personal takeover mode」）；没有档案时 `--status` 会报告
+`personal.prefsExists: false`，先征询用户再 `--prefs` 建档。接管不弹空白窗、不重复开已有页面；
+`--stop` 只关 ego 自启的实例，外部用户实例只断开不杀。
 
 **不预热（重要）**：do **not** first launch `--open` (or a standalone
 `ego-browser`) just to create an empty window and then run a second command for
@@ -49,19 +57,12 @@ profile and reuses it instead of launching a second browser.
 If you invoke `runtime/ego-linux/bin/ego-browser.mjs` directly, set
 `EGO_LINUX_CHROME` yourself with forward slashes.
 
-## Stable script execution (shell-agnostic)
+## Stable script execution (cmd)
 
-Inline heredocs differ between PowerShell (`@'...'@ | ego-browser`) and cmd
-(`< file`). To run the same script in either shell, write it to a UTF-8 `.js`
-file and feed it on stdin:
-
-```powershell
-# PowerShell
-Get-Content task.js -Raw | ego-browser nodejs
-```
+cmd has no inline heredoc, so write the script to a UTF-8 `.js` file and feed it
+on stdin:
 
 ```cmd
-:: cmd
 ego-browser nodejs < task.js
 ```
 
@@ -79,8 +80,8 @@ handoff → finish).
 
 ## Inheriting your logins
 
-```powershell
-ego-browser --stop    # must be stopped first
+```cmd
+ego-browser --stop
 ego-browser --import-chrome-profile
 ```
 
@@ -95,7 +96,7 @@ space stay in that space; the browser only persists them to disk on a clean
 |---|---|
 | `no Chrome/Chromium binary found` | Set `EGO_LINUX_CHROME` to a forward-slash absolute path, or install Edge/Chrome |
 | `useOrCreateTaskSpace is not defined` (or similar) | You're using the new upstream helper names. This runtime exposes the **facade** (`taskSpaces`, `page`, `browser`, ...) — see [facade.md](facade.md) |
-| `'ego-browser' is not recognized` | `bin\` isn't on PATH. Add it (or run `scripts\install-copilot-skill.ps1`, which adds it automatically), then open a new terminal. Do **not** fall back to hunting for scripts |
+| `'ego-browser' is not recognized` | `bin\` isn't on PATH. Add it (or run `scripts\install-copilot-skill.cmd`, which adds it automatically), then open a new terminal. Do **not** fall back to hunting for scripts |
 | A blank browser opens before the real task starts | Don't warm up. Use one cold-start `ego-browser --url <url> nodejs` so the very first window is already the page; the browser is single-instance and reuses across runs |
 | Several independent browser processes pile up | The runtime now detects a live instance by process (not just a port probe) and never launches a second one. If you still see multiples, run `ego-browser --stop` once, then use `ego-browser --url <url>` cold-start. Close tabs created by retries once the task is done |
 | Task hits a CAPTCHA / login wall | Do NOT `--stop` or close the browser. Keep the page open, `taskSpaces.handOff(id)`, tell the user what to do, and after they confirm `taskSpaces.takeOver(id)` to continue the same space |

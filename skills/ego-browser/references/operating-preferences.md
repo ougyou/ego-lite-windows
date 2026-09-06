@@ -56,9 +56,9 @@
 - **不预热**：**不要**单独 `--open` 预热再跑任务（那是历史上多开的主要来源）。
   `--open` 仅用于登录/人工检查，用后 `--stop` 关闭。运行时已改为单实例：
   探测到活进程就复用，绝不新开第二个。
-- 脚本执行尽量用"写 `.js` 文件 → stdin 喂入"（`Get-Content file -Raw | ego-browser nodejs` 或 `ego-browser nodejs < file`），避开 PowerShell/cmd heredoc 差异，减少往返。
+- 脚本执行一律用"写 `.js` 文件 → stdin 喂入"：cmd 无 heredoc，用 `ego-browser nodejs < file` 喂入，减少往返与转义问题。
 - **单 tab 优先（语义驱动）**：任务默认在同一个 tab 用 `page.goto` 顺序导航（目标是"到达某个最终页面"时，中间步骤都是路径，不新开 tab）；只有用户语义明确需要多页（对比/并行/保留参考页）才开新 tab，用完 `closeTab`。导航后先轮询 `page.url()` 确认指向目标再读。
-- **临时脚本放 TEMP、收尾清理**：临时操作脚本写 `$env:TEMP/ego-browser-<task>/`（不进仓库），任务收尾删除；产物（截图）保留到仓库可见目录。
+- **临时脚本放 TEMP、收尾清理**：临时操作脚本写 `%TEMP%\ego-browser-<task>\`（不进仓库），任务收尾删除；产物（截图）保留到仓库可见目录。
 
 ## 7. 完成前先验证，用证据说话
 
@@ -67,11 +67,26 @@
 
 ## 8. 常用工具命令速记
 
-```powershell
-node scripts\verify.mjs                          # 端到端冒烟（无头）
-node scripts\verify-single-instance.mjs          # 单实例回归（多开检查）
-ego-browser --open                               # 开可见窗口（登录用）
-ego-browser --stop                               # 优雅关闭 + 落盘
-ego-browser --status                             # 状态
-ego-browser --headless nodejs                    # 无头跑 heredoc
+```cmd
+:: 端到端冒烟（无头）
+node scripts\verify.mjs
+:: 单实例回归（多开检查）
+node scripts\verify-single-instance.mjs
+:: 开可见窗口（登录用）
+ego-browser --open
+:: 优雅关闭 + 落盘
+ego-browser --stop
+:: 状态
+ego-browser --status
+:: 无头跑脚本文件
+ego-browser --headless nodejs < task.js
 ```
+
+## 9. 个人接管模式（默认）· 补充约定（2026-09-06）
+
+- **默认驱动你自己的 workspace Chrome**（按 `personal-browser.json` 档案）：接管在跑实例（复用其
+  已加载登录态/会话与已开 tab，直接操作），无实例则按档案冷启动同一 profile。不弹空白窗、不重复多开。
+- **首用建档**：`--status` 显示 `personal.prefsExists:false` → 先征询用户惯常启动命令，确认后
+  `ego-browser --prefs "{...}"` 建档；之后每次启动前读取。禁止猜默认命令、禁止无档案擅自启动。
+- **外部实例绝不杀**：`--stop` 只关 ego 自启实例；外部用户浏览器只"断开"。不 import、不改其 profile 数据。
+- 需要 ego 隔离 profile 旧行为：`--isolated` 或 `EGO_LINUX_PERSONAL=0`。

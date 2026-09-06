@@ -13,9 +13,10 @@
    导航可能指向站方推广视频（如官方账号"22和33"的 2233 生日曲），全页第一个
    `a[href*="/video/BV"]` 不一定属于该 UP 主。**必须限定 `.bili-video-card`
    投稿列表**取视频，忽略顶部推广。
-2. **中文输入 / 搜索**：PowerShell 管道默认按 ASCII 编码传 stdin，脚本里的中文
-   会变 `???`。脚本内用 `\uXXXX` 转义（如"慢学AI" = `\u6162\u5b66AI`），或保证
-   脚本文件为 UTF-8 且内容全 ASCII。
+2. **中文输入 / 搜索**：cmd 没有 heredoc，一律写 UTF-8 `.js` 文件后用
+   `ego-browser nodejs < task.js` 喂入（文件字节原样进 stdin，中文不丢）。
+   若内容是内联拼接 / 经 echo 粘贴（受控制台代码页影响）仍可能乱码，稳妥
+   起见脚本内中文用 `\uXXXX` 转义（如"慢学AI" = `\u6162\u5b66AI`）。
 3. **投稿接口限流**：`x/space/arc/search` 返回 -799、wbi 版 -403 → 用页面列表
    定位视频（`.bili-video-card`），不要依赖投稿接口。
 4. **新开 tab 后 page 需确认 attach**：`openOrReuseTab` 打开新 tab 后 `page`

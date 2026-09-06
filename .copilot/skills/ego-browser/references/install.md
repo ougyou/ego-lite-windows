@@ -20,22 +20,22 @@ Add this folder to your user `PATH`:
 `c:\Users\quincy\workspace\mywork\fontwebProjects\ego-lite-windows\bin`
 
 Do **not** add `scripts\` for command-line use; `bin\ego-browser.cmd` is the
-stable wrapper. `scripts\install-copilot-skill.ps1` (and
-`skills\ego-browser\scripts\install.ps1`) add `bin\` to your user PATH
+stable wrapper. `scripts\install-copilot-skill.cmd` (and
+`skills\ego-browser\scripts\install.cmd`) add `bin\` to your user PATH
 automatically (idempotent) — you only need to do it by hand if you skip those.
 
 ## Install steps
 
-```powershell
-# 1. (optional) put the `ego-browser` command on PATH
-#    - add the repo's bin\ folder to PATH, or
-#    - run:  .\scripts\install-copilot-skill.ps1   # (also installs the Copilot skill)
+```cmd
+:: 1. (optional) put the `ego-browser` command on PATH
+::    - add the repo's bin\ folder to PATH, or
+::    - run:  scripts\install-copilot-skill.cmd   (also installs the Copilot skill)
 
-# 2. Verify the runtime end-to-end (headless smoke test):
+:: 2. Verify the runtime end-to-end (headless smoke test):
 node scripts\verify.mjs
-#    PASS: runtime drives a real page on this machine
+::    PASS: runtime drives a real page on this machine
 
-# 3. Confirm the command works (after adding bin\ to PATH):
+:: 3. Confirm the command works (after adding bin\ to PATH):
 ego-browser --status
 ```
 
@@ -44,8 +44,8 @@ ego-browser --status
 The skill lives at `skills/ego-browser/`. To make it available to Copilot in
 any workspace:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-copilot-skill.ps1
+```cmd
+scripts\install-copilot-skill.cmd
 ```
 
 This copies the skill to `~\.copilot\skills\ego-browser\` (VS Code Copilot
@@ -64,13 +64,15 @@ slash command, and Copilot should auto-load it for phrases like
 
 ## First real browser run
 
-```powershell
-ego-browser --url https://example.com nodejs  # first window is already the page; or:
-ego-browser nodejs   # then paste a heredoc; or:
+```cmd
+:: first window is already the page:
+ego-browser --url https://example.com nodejs
+:: or feed a saved script file:
+ego-browser nodejs < task.js
 ```
 
 ```js
-// from any heredoc:
+// task.js
 const task = await taskSpaces.useOrCreate('my goal')
 await browser.openOrReuseTab('https://example.com', { wait: true, timeout: 30 })
 console.log(await page.snapshot())

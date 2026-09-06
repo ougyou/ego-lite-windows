@@ -38,6 +38,10 @@ without the macOS app, DSH, or a build step.
 - **中文交流**。
 - 登录态：`--open` 登录一次 → `--stop` 落盘；别依赖 `--import-chrome-profile`。
 - 验证登录：用站点鉴权接口（如 bilibili `/x/web-interface/nav`），别用 CDP `getAllCookies`。
+- **个人接管模式（默认）**：技能默认接管/启动用户自己的 workspace Chrome（`--prefs` 建档、读取优先；
+  外部用户实例 `--stop` 只断不杀；isolated 旧行为经 `--isolated` / `EGO_LINUX_PERSONAL=0`）。
+  运行时 `runtime/ego-linux/src/personal-prefs.mjs`、`chrome.mjs`（`resolveBackingBrowser` 等）与
+  `task-spaces.mjs`（`adoptPersonalSpace`）实现，改动记 `runtime/PATCHES.md`。
 - 完整清单见 `skills/ego-browser/references/operating-preferences.md`。
 
 ## Verification
