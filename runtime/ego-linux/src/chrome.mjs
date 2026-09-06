@@ -994,6 +994,40 @@ export async function findChromeMainOnPort(port) {
   }
 }
 
+/**
+ * Main Chrome processes running against `userDataDir` on ANY port (or none).
+ * Used to distinguish "your workspace Chrome is up but was not started with the
+ * debug port" (actionable error) from "nothing running" (safe to launch).
+ */
+export async function findChromeMainWithProfile(userDataDir) {
+  if (process.platform !== "win32") return [];
+  try {
+    const r = spawnSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '--user-data-dir=' -and $_.CommandLine -notmatch '--type=' } | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress`,
+      ],
+      {
+        encoding: "utf8",
+        timeout: 10_000,
+        windowsHide: true,
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+    if (r.status !== 0) return [];
+    const parsed = JSON.parse(r.stdout || "[]");
+    const rows = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [];
+    return rows
+      .filter((p) => p && typeof p.CommandLine === "string")
+      .filter((p) => profileMatches(p.CommandLine, userDataDir))
+      .map((p) => ({ pid: Number(p.ProcessId), cmdline: p.CommandLine }));
+  } catch {
+    return [];
+  }
+}
+
 /** Report the personal-mode situation without touching any browser. */
 export async function personalStatus() {
   const prefs = await loadPrefs();
@@ -1121,6 +1155,31 @@ export async function resolveBackingBrowser({
       owned: false,
       mode: "personal",
     };
+  }
+  // Nothing answers the debug port. Before launching a second instance, tell a
+  // live-but-undebuggable workspace Chrome apart from a genuinely idle one:
+  // Chrome will not start a second instance over an already-running profile, so
+  // launching into a live (port-less) one would only time out waiting for a
+  // DevTools endpoint that can never appear.
+  const withProfile = await findChromeMainWithProfile(prefs.userDataDir);
+  if (withProfile.length > 0) {
+    const comingUp = withProfile.some((p) =>
+      p.cmdline.includes(`--remote-debugging-port=${prefs.debugPort}`),
+    );
+    if (comingUp) {
+      const { port, wsUrl: readyWs } = await waitForPortReady(prefs.debugPort);
+      return {
+        wsUrl: readyWs,
+        port,
+        launched: false,
+        owned: false,
+        mode: "personal",
+      };
+    }
+    throw new Error(
+      `your workspace Chrome (${prefs.userDataDir}) is already running but was NOT started with --remote-debugging-port=${prefs.debugPort}. ` +
+        `Close it (or relaunch it with your saved prefs), then retry — a second instance on the same profile cannot expose DevTools.`,
+    );
   }
   return launchPersonal(prefs, { startUrl, headless });
 }
