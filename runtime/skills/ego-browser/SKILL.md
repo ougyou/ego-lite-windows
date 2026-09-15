@@ -15,6 +15,15 @@ short JS snippet, `ego-browser` runs it against a live page in one pass, and
 the result comes back on stdout. Tabs live in isolated **task spaces** that
 reuse your login state without touching your normal browser windows.
 
+## Engine choice (v1 default · v2 opt-in)
+
+This repo ships two harness builds. The default is **v1**, and the API documented
+throughout this Skill (`taskSpaces`, `browser`, `page` facade) is v1's. Set
+`EGO_BROWSER_HARNESS=v2` for a run to use the **upstream v2.0.0** harness in
+isolated mode: it has more reliability fixes but a different script API
+([references/api.md](references/api.md)) and cannot drive agent-created pages in
+personal takeover mode. Details: [references/windows.md](references/windows.md).
+
 ## Invocation
 
 Run browser operations with the **`ego-browser` command on PATH** — the stable

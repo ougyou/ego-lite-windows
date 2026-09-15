@@ -5,6 +5,29 @@ runs on Windows. It drives your installed Edge or Chrome — there is no macOS
 app and nothing to buy. Requirements: **Node >= 22** and any
 **Chrome / Edge / Brave**.
 
+## Two harnesses: v1 (default) and v2 (opt-in)
+
+The browser engine (`runtime/ego-browser/dist/out/*.js`) exists in two builds:
+
+| Engine | File | Status |
+|---|---|---|
+| **v1** (default) | `dist/out/index.js` | The harness the Skill docs here (`references/facade.md`, `task-spaces.md`, `video.md`) describe. Personal takeover mode is verified against it. |
+| **v2** (opt-in) | `dist/out/index.v2.js` | Upstream citrolabs/ego-lite **v2.0.0** built with the Windows path patch. Big reliability gains (ref lifetime, iframe handling, actionability diagnostics, compact snapshots, download API). Its API is in [api.md](api.md) — a **different script dialect** (`taskSpace()`, `task.page()`) from the v1 facade. |
+
+Enable it per run:
+
+```cmd
+set EGO_BROWSER_HARNESS=v2
+ego-browser --isolated nodejs < task.js
+```
+
+**Known limitation:** with the v2 harness, pages *the agent creates* inside
+personal takeover mode hang (page operations time out), so **personal mode must
+stay on v1**. Isolated mode with v2 is verified by
+`node scripts/verify-v2-engine.mjs`. Evidence and build recipe:
+`runtime/PATCHES.md`. `--sdk-path <file>` still selects a bundle explicitly and
+wins over both.
+
 ## Environment variables
 
 | Variable | Meaning | Default |

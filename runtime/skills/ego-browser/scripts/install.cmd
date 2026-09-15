@@ -11,7 +11,7 @@ REM ============================================================
 set "SKIP_PATH="
 if /i "%~1"=="-SkipPath" set "SKIP_PATH=1"
 
-set "REPO=%~dp0..\.."
+set "REPO=%~dp0..\..\.."
 set "SKILL_SRC=%REPO%\skills\ego-browser"
 set "PF=%ProgramFiles%"
 set "PF86=%ProgramFiles(x86)%"
