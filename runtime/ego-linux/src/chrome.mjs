@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
-import { BROWSER_STATE_FILE, PERSONAL_STATE_FILE, PROFILE_DIR, STATE_DIR } from "./paths.mjs";
+import { BROWSER_STATE_FILE, PERSONAL_STATE_FILE, PROFILE_DIR, STATE_DIR, TASK_SPACE_FILE } from "./paths.mjs";
 import { loadPrefs, profileMatches } from "./personal-prefs.mjs";
 
 const BINARY_CANDIDATES = [
@@ -895,7 +895,26 @@ export async function stopBrowser() {
     stopped = await terminateTree(state.pid, PROFILE_DIR);
   }
 
+  // The state file can be missing or stale while a browser still owns our
+  // profile — e.g. two cold starts raced for the same profile and the loser's
+  // cleanup removed browser.json. browserStatus() already treats a live process
+  // as authoritative; --stop must too, or the browser is left running and, once
+  // the state file is gone, unreachable. enumerateOwnBrowserMainProcesses()
+  // matches only main processes whose command line carries our profile dir and
+  // --class marker, and terminateTree() re-checks that ownership, so a user's
+  // own browser is never touched.
+  if (!stopped) {
+    for (const proc of await enumerateOwnBrowserMainProcesses(PROFILE_DIR)) {
+      if (await terminateTree(proc.pid, PROFILE_DIR)) stopped = true;
+    }
+  }
+
   await rm(BROWSER_STATE_FILE, { force: true });
+  // Every space's Pages and browser contexts died with the browser, so the
+  // recorded ledger is unusable: resuming such a space after a fresh launch
+  // fails on dead target/context ids. Drop it once the browser is gone (cookie
+  // reflow already happened before this in the CLI's --stop path).
+  if (stopped) await rm(TASK_SPACE_FILE, { force: true });
   // A SIGTERMed Chrome does not always release its profile lock, which would
   // block the next launch. After a graceful close there is nothing left to
   // clear, and this is a no-op.
