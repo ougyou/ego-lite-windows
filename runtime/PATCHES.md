@@ -8,6 +8,37 @@
 
 ## 明确的本地改动（相对 vendored 基线）
 
+### 2026-09-15：新增上游 v2.0.0 引擎（**可选**，默认仍是 v1）
+
+| 文件 | 改动 | 原因 |
+|---|---|---|
+| `runtime/ego-browser/dist/out/index.v2.js` | **新增**：上游 citrolabs/ego-lite `v2.0.0`（tag `d01be93`）的 `package/ego-browser` 构建产物，构建前在源码打了下面的 sep 补丁 | 上游 v2 相对本仓 bundle（2026-08 的 v1.2.x）多了 6 周 / 155 个提交（85 个是 ego-browser 核心）：ref 生命周期保活、iframe 可靠性、actionability 诊断、compact snapshot、下载 API 等。以**新增文件**形式引入，默认不启用 |
+| `runtime/ego-linux/bin/ego-browser.mjs` | 新增引擎选择：`EGO_BROWSER_HARNESS=v2` 时加载 `index.v2.js`；`--sdk-path <f>` 仍最高优先。另把 `nodejs` 前缀剥离由「仅当 argv[0]」改为**任意位置**（`argv.indexOf("nodejs")` 后 splice） | v2 的 `runMain()` 严格拒绝任何残留 argv（打印 usage 退出），旧顺序 `--headless nodejs` 会把 `nodejs` 漏进去；v2 必须可显式选择而非替换默认（见下） |
+| `runtime/ego-linux/src/task-spaces.mjs` | `adoptPersonalSpace()` 的个人伪 space 改用**数字 id**（`state.nextId` 计数，与真实 space 同一计数器；`browserContextId` 仍为 `null` 保持非隔离），并对旧记录做一次性迁移 | v2 harness 强制 `TaskSpace requires a numeric id`，字符串 id `"personal"` 会让个人模式下 `taskSpace()` 直接抛错 |
+| 上游源码 `package/ego-browser/src/learning/index.ts`（**构建期补丁，未随 bundle 发布源码**） | `relativeSitePath()` 边界校验由 `startsWith(\`${siteRoot}/\`)` 改为按实际分隔符 `sep` 拼接（并 `import { sep }`）。上游 v2.0.0 **仍未修** | Windows 上 `path.resolve` 返回反斜杠，正斜杠边界校验会让所有 learnings 的相对工具路径校验失败（同一 bug 此前已打在 v1 bundle 上） |
+
+**为什么 v2 只是"可选"而不是默认**（实证，2026-09-15）：
+
+- **隔离模式：v2 可用**（`node scripts/verify-v2-engine.mjs` PASS；单实例检查通过；`taskSpace`/`page.goto`/`snapshot`/`task.finish` 全通）。
+- **个人接管模式：v2 不可用**。实证：同一台机器、同一套 throwaway-Chrome 环境，**v1 harness 跑 `scripts/verify-personal.mjs` 全绿**；换成 v2 harness 后，个人空间里 **agent 自己新建的 page**（`task.newPage()` → `goto`/`title`）**全部 15s 超时**（"page.evaluate timed out … the Page is still unresponsive"），而被接管的用户 tab 读取正常（`page.title()` 8ms）。多次运行结果不稳定（同一次会话里 `goto` 同 URL 有时 109ms 通过、换 URL 必超时），说明是 v2 Page 会话在非隔离（default context）页面上的挂起问题，而非用法问题。
+- 由于个人接管模式是本仓默认且是核心特性，**默认引擎保持 v1**；v2 通过 `EGO_BROWSER_HARNESS=v2`（建议配 `--isolated`）显式启用。待 v2 Page 抽象与非隔离页面兼容后再切默认。
+
+**两个引擎的脚本方言不同**（v1 facade ↔ v2 API）：`taskSpaces.useOrCreate(n)` ↔ `taskSpace(n)`；`browser.openOrReuseTab/listTabs/closeTab` ↔ `task.page("p1")`/`task.tabs()`/`page.close()`；`taskSpaces.complete(id,{keep})` ↔ `task.finish({keep})`。v1 方言见 `references/facade.md`，v2 方言见 `references/api.md`（该文件顶部已标注属于 v2 引擎）。
+
+技能文档以 **v1 方言为默认**（保持本仓原有 SKILL.md/参考文档），并**新增**上游 v2 的 `references/api.md`、`references/clearing-state.md`、`learnings/github/` 与更新版 `learnings/google|x-com`，供启用 v2 时参考。
+
+构建 v2 bundle 的方式（Windows）：
+
+```bash
+cd <upstream clone>/package/ego-browser
+npm install --ignore-scripts   # 上游 prepare 钩子是 POSIX shell 写法，Windows 下直接失败
+node scripts/build.mjs         # 产物 dist/out/index.js（约 800K）→ 复制为 index.v2.js
+```
+
+| `runtime/ego-linux/src/chrome.mjs` | `stopBrowser()` 在状态文件缺失/失效时**兜底枚举本 profile 的活主进程并终止**（`enumerateOwnBrowserMainProcesses` → `terminateTree`，二者都带归属校验，绝不误伤用户自己的浏览器）；`--stop` 成功关停后**清掉 space 台账** `task-spaces.json` | 修复本仓自带回归测试的既有失败（**未改动的 HEAD 上 `scripts/verify-single-instance.mjs` 的 S4/S5 就会失败**，2026-09-15 实证）：① 两个冷启动竞争同一 profile 时，落败方的清理会删掉 `browser.json`，此时 `--stop` 只认状态文件 → 浏览器活着却停不掉且失去句柄；② 浏览器已停但台账里的 space 仍记着已失效的 `browserContextId`/`targetId`，下次冷启动续用同名 space 会失败（`verify-personal` 与单实例测试均覆盖）。修后 `verify-single-instance` 全绿 |
+
+### 原有改动（相对 vendored 基线）
+
 | 文件 | 改动 | 原因 / 提交 |
 |---|---|---|
 | `runtime/ego-linux/src/cursor.mjs` | 光标覆盖层默认名 `Claude` → `DeepSeek`（4 处：默认值 + 注释） | 品牌统一，`dacbd47` |
