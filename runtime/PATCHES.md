@@ -8,25 +8,19 @@
 
 ## 明确的本地改动（相对 vendored 基线）
 
-### 2026-09-15：新增上游 v2.0.0 引擎（**可选**，默认仍是 v1）
+### 2026-09-15：harness 升级到上游 v2.0.0（**默认**；v1 保留为可选）
 
 | 文件 | 改动 | 原因 |
 |---|---|---|
-| `runtime/ego-browser/dist/out/index.v2.js` | **新增**：上游 citrolabs/ego-lite `v2.0.0`（tag `d01be93`）的 `package/ego-browser` 构建产物，构建前在源码打了下面的 sep 补丁 | 上游 v2 相对本仓 bundle（2026-08 的 v1.2.x）多了 6 周 / 155 个提交（85 个是 ego-browser 核心）：ref 生命周期保活、iframe 可靠性、actionability 诊断、compact snapshot、下载 API 等。以**新增文件**形式引入，默认不启用 |
-| `runtime/ego-linux/bin/ego-browser.mjs` | 新增引擎选择：`EGO_BROWSER_HARNESS=v2` 时加载 `index.v2.js`；`--sdk-path <f>` 仍最高优先。另把 `nodejs` 前缀剥离由「仅当 argv[0]」改为**任意位置**（`argv.indexOf("nodejs")` 后 splice） | v2 的 `runMain()` 严格拒绝任何残留 argv（打印 usage 退出），旧顺序 `--headless nodejs` 会把 `nodejs` 漏进去；v2 必须可显式选择而非替换默认（见下） |
+| `runtime/ego-browser/dist/out/index.v2.js` | **新增**：上游 citrolabs/ego-lite `v2.0.0`（tag `d01be93`）的 `package/ego-browser` 构建产物，构建前在源码打了下面的 sep 补丁 | 上游 v2 相对本仓 bundle（2026-08 的 v1.2.x）多了 6 周 / 155 个提交（85 个是 ego-browser 核心）：ref 生命周期保活、iframe 可靠性、actionability 诊断、compact snapshot、下载 API 等。默认加载 `index.v2.js` |
+| `runtime/ego-linux/bin/ego-browser.mjs` | 引擎选择：默认 harness = `index.v2.js`，`EGO_BROWSER_HARNESS=v1` 时回退 `index.js`（旧 facade 方言）；`--sdk-path <f>` 仍最高优先。另把 `nodejs` 前缀剥离由「仅当 argv[0]」改为**任意位置**（`argv.indexOf("nodejs")` 后 splice） | v2 的 `runMain()` 严格拒绝任何残留 argv（打印 usage 退出），旧顺序 `--headless nodejs` 会把 `nodejs` 漏进去；v2 成默认的前提是下述 transport 修复（个人模式已实测可用） |
 | `runtime/ego-linux/src/task-spaces.mjs` | `adoptPersonalSpace()` 的个人伪 space 改用**数字 id**（`state.nextId` 计数，与真实 space 同一计数器；`browserContextId` 仍为 `null` 保持非隔离），并对旧记录做一次性迁移 | v2 harness 强制 `TaskSpace requires a numeric id`，字符串 id `"personal"` 会让个人模式下 `taskSpace()` 直接抛错 |
 | 上游源码 `package/ego-browser/src/learning/index.ts`（**构建期补丁，未随 bundle 发布源码**） | `relativeSitePath()` 边界校验由 `startsWith(\`${siteRoot}/\`)` 改为按实际分隔符 `sep` 拼接（并 `import { sep }`）。上游 v2.0.0 **仍未修** | Windows 上 `path.resolve` 返回反斜杠，正斜杠边界校验会让所有 learnings 的相对工具路径校验失败（同一 bug 此前已打在 v1 bundle 上） |
 | `runtime/ego-linux/src/transport.mjs` + `cursor.mjs` | 会话认领机制重构：**响应永不被吞**（id < `INTERNAL_ID_BASE` 的入站消息只可能应答 harness，吞掉即 15s 超时）；`claimSession(id, { silent })` 新增非静默认领，光标 overlay 改为非静默（其会话可能被 harness 共享，事件流也要送达 harness；spaces 面板的 screencast 转播保持静默防刷屏） | **修复 v2 harness 在个人接管模式挂死的根因**（2026-09-15 transport 双向日志实证）：Chrome 在 `Target.setDiscoverTargets` 开启后，会把连接上的**每次 attach**（含 shim 内部的光标 overlay attach）都以 `Target.attachedToTarget` 事件广播 → v2 harness 从事件注册该会话并直接驱动它（`ensureSession` 的 2s 缓存快速路径）→ 而光标又认领了同一会话 → 传输层把该会话的**全部消息**（包括 harness 的响应）当 shim 私有吞掉 → 所有页面操作 15s 超时（"page is still unresponsive"）。隔离模式因 headless 下光标禁用而幸免；偶发性来自 harness 先 attach 自己的会话（正常）还是先注册到光标会话（挂死）的竞态。修复后个人模式 v2 六步探针（taskSpace/adopt/adoptedRead/newPage/goto/read）连续三轮全绿，v1 三项回归 + v2 冒烟 + 单实例回归全部无回归 |
 
-**为什么 v2 当时只作为"可选"引入**（实证，2026-09-15；下述限制已被上表的 transport 修复解决）：
+**切换为默认的依据**：上表 transport 修复落地后，个人接管模式 v2 六步探针连续三轮全绿（此前该模式 15s 超时挂死，详见上表根因）；隔离模式、单实例回归、v1 引擎冒烟（`verify:v1`）亦全绿，故 v2 转正为默认，v1 以 `EGO_BROWSER_HARNESS=v1` 保留（旧脚本兼容，方言见 `references/facade.md`，文件顶部已标注）。
 
-- **隔离模式：v2 可用**（`node scripts/verify-v2-engine.mjs` PASS；单实例检查通过；`taskSpace`/`page.goto`/`snapshot`/`task.finish` 全通）。
-- **个人接管模式：v2 不可用**。实证：同一台机器、同一套 throwaway-Chrome 环境，**v1 harness 跑 `scripts/verify-personal.mjs` 全绿**；换成 v2 harness 后，个人空间里 **agent 自己新建的 page**（`task.newPage()` → `goto`/`title`）**全部 15s 超时**（"page.evaluate timed out … the Page is still unresponsive"），而被接管的用户 tab 读取正常（`page.title()` 8ms）。多次运行结果不稳定（同一次会话里 `goto` 同 URL 有时 109ms 通过、换 URL 必超时），说明是 v2 Page 会话在非隔离（default context）页面上的挂起问题，而非用法问题。
-- 由于个人接管模式是本仓默认且是核心特性，**默认引擎保持 v1**；v2 通过 `EGO_BROWSER_HARNESS=v2`（建议配 `--isolated`）显式启用。待 v2 Page 抽象与非隔离页面兼容后再切默认。
-
-**两个引擎的脚本方言不同**（v1 facade ↔ v2 API）：`taskSpaces.useOrCreate(n)` ↔ `taskSpace(n)`；`browser.openOrReuseTab/listTabs/closeTab` ↔ `task.page("p1")`/`task.tabs()`/`page.close()`；`taskSpaces.complete(id,{keep})` ↔ `task.finish({keep})`。v1 方言见 `references/facade.md`，v2 方言见 `references/api.md`（该文件顶部已标注属于 v2 引擎）。
-
-技能文档以 **v1 方言为默认**（保持本仓原有 SKILL.md/参考文档），并**新增**上游 v2 的 `references/api.md`、`references/clearing-state.md`、`learnings/github/` 与更新版 `learnings/google|x-com`，供启用 v2 时参考。
+**两个引擎的脚本方言不同**（v2 API 默认 ↔ v1 facade 可选）：`taskSpace(n)` ↔ `taskSpaces.useOrCreate(n)`；`task.page("p1")`/`task.tabs()`/`page.close()` ↔ `browser.openOrReuseTab/listTabs/closeTab`；`task.finish({keep})` ↔ `taskSpaces.complete(id,{keep})`。v2 方言见 `references/api.md` 与 SKILL.md（已以上游 2.0.0 文档为基底重建，保留本仓 Windows 调用规则、个人接管 SOP、Open→Verify→Correct、Win 注意事项）。
 
 构建 v2 bundle 的方式（Windows）：
 

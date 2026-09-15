@@ -28,7 +28,7 @@ import { createEgoShim } from "../src/shim.mjs";
 import { startSpacesServer } from "../src/spaces-server.mjs";
 import { connectCdp } from "../src/transport.mjs";
 
-const HARNESS = new URL("../../ego-browser/dist/out/index.js", import.meta.url);
+const HARNESS = new URL("../../ego-browser/dist/out/index.v2.js", import.meta.url);
 const SKILL_WORKSPACE = new URL("../../skills/ego-browser", import.meta.url); // vendored layout: runtime/ego-linux/bin -> runtime/skills/ego-browser
 
 const USAGE = `ego-browser (Linux port)
@@ -465,11 +465,11 @@ async function main() {
     }
     harness = pathToFileURL(path).href;
     rest.splice(sdkFlag, 2);
-  } else if ((process.env.EGO_BROWSER_HARNESS || "").toLowerCase() === "v2") {
-    // Opt-in upstream v2 harness (default is the v1 bundle). v2 is verified for
-    // ISOLATED mode; in personal takeover mode driving pages it creates hangs
-    // (see runtime/PATCHES.md), so it is not the default.
-    harness = new URL("../../ego-browser/dist/out/index.v2.js", import.meta.url).href;
+  } else if ((process.env.EGO_BROWSER_HARNESS || "").toLowerCase() === "v1") {
+    // The legacy v1 harness (the facade dialect: taskSpaces/browser/page
+    // globals, see references/facade.md). The default is the upstream v2
+    // bundle; v1 stays selectable for old scripts.
+    harness = new URL("../../ego-browser/dist/out/index.js", import.meta.url).href;
   }
 
   // Site skills and learnings live in the repo's skill directory.

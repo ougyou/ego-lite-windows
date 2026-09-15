@@ -1,3 +1,6 @@
+> **Legacy v1 harness reference** — only for runs with `EGO_BROWSER_HARNESS=v1`.
+> The default harness uses the v2 API in [api.md](api.md) and SKILL.md.
+
 # ego-browser facade — full helper reference
 
 Every heredoc gets these helpers preloaded. This is the complete reference for

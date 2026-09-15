@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Smoke test — prove the vendored runtime can drive a real page on this
- * machine. Launches headless Edge/Chrome through the launcher, opens a page,
- * reads page info, and closes the task space.
+ * Smoke test — prove the default (upstream v2) harness can drive a real page
+ * on this machine through the runtime. Launches headless Edge/Chrome via the
+ * launcher, opens a page, reads it back, and closes the task space.
  *
  *   node scripts/verify.mjs
  *
@@ -17,14 +17,18 @@ const LAUNCHER = fileURLToPath(
   new URL("./ego-browser-launch.mjs", import.meta.url),
 );
 
+// A per-run space name: resuming a name whose Pages died with a previous
+// browser leaves a stale ledger entry in the harness.
+const SPACE = `verify-${Date.now()}`;
+
 const SCRIPT = `
-const task = await taskSpaces.useOrCreate('verify')
-console.log('SPACE_ID=' + task.id)
-await browser.openOrReuseTab('https://example.com', { wait: true, timeout: 30 })
-const info = await page.info()
-console.log('URL=' + info.url)
-console.log('TITLE=' + info.title)
-await taskSpaces.complete(task.id, { keep: false })
+const task = await taskSpace(${JSON.stringify(SPACE)})
+console.log('SPACE_ID=' + task.spaceId)
+const page = task.page('p1')
+await page.goto('https://example.com', { timeout: 30000 })
+console.log('URL=' + (await page.url()))
+console.log('TITLE=' + (await page.title()))
+await task.finish({ keep: [] })
 `;
 
 function run() {

@@ -8,10 +8,10 @@
  * Starts a throwaway HEADLESS Chrome on a temp profile + temp port, opens two
  * local file pages as "existing tabs", archives a prefs pointing at that
  * profile, then drives it through the real CLI personal path and asserts:
- *   A. first listTabs already shows the 2 existing tabs (pseudo-space adopt)
- *   B. openOrReuse of an existing URL does not duplicate it
- *   C. a brand-new page opens in the default context and is tracked
- *   D. closing that new tab returns the count to the baseline
+ *   A. the personal space's tabs() already shows the 2 existing tabs
+ *   B. re-navigating the adopted existing tab does not duplicate it
+ *   C. a page the agent creates is tracked in the space
+ *   D. closing that page returns the count to the baseline
  *   --stop must NOT kill the externally-started browser.
  *
  * Exits 0 (PASS) or 1 (FAIL). Cleans up its own processes and temp dir.
@@ -104,8 +104,8 @@ function runCliSync(args, stateDir) {
 }
 
 async function runEgoScript(stateDir, wwwDir, source) {
-  // The heredoc is fed on stdin; the facade's browser.listTabs() returns an
-  // array of tabs (not { tabs }).
+  // The heredoc is fed on stdin; task.tabs() lists every tab in the space as
+  // { label?, page, targetId, title, url, active, openedBy }.
   const script = `const P=${JSON.stringify(`file:///${wwwDir.replace(/\\/g, "/")}`)};\n` + source;
   const res = await runCli(["nodejs"], stateDir, { stdin: script });
   return res.out;
@@ -134,7 +134,7 @@ async function main() {
         [
           "-NoProfile",
           "-Command",
-          `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match [regex]::Escape('${esc}') -and $_.CommandLine -match 'chrome' } | ForEach-Object { cmd /c \"taskkill /PID $($_.ProcessId) /T /F\" 2>&1 | Out-Null }`,
+          `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match [regex]::Escape('${esc}') -and $_.CommandLine -match 'chrome' } | ForEach-Object { cmd /c "taskkill /PID $($_.ProcessId) /T /F" 2>&1 | Out-Null }`,
         ],
         { encoding: "utf8", timeout: 20000, windowsHide: true },
       );
@@ -180,24 +180,31 @@ async function main() {
     check("prefs saved", save.code, 0);
     if (save.code !== 0) return 1;
 
-    // 4) heredoc assertions through the real personal path
+    // 4) heredoc assertions through the real personal path. The personal space
+    // carries a numeric id; adopted user tabs are unmanaged (no label) until
+    // task.adopt() gives them one.
     const out = await runEgoScript(state, wwwDir, `
-const toArr = (x) => (Array.isArray(x) ? x : (x && x.tabs) || []);
-const fc = (tabs) => toArr(tabs).filter((t) => /^file:/.test((t.url || "") || "")).length;
-const cur = async () => toArr(await browser.listTabs());
-console.log('A=' + fc(await cur()));
-await browser.openOrReuseTab(P + '/p1.html', { wait: true, timeout: 20 });
-console.log('B=' + fc(await cur()));
-await browser.openOrReuseTab(P + '/p3.html', { wait: true, timeout: 20 });
-console.log('C=' + fc(await cur()));
-const created = toArr(await browser.listTabs()).find((t) => t.url === P + '/p3.html');
-if (created) await browser.closeTab(created.targetId);
-console.log('D=' + fc(await cur()));
+const fc = (tabs) => tabs.filter((t) => /^file:/.test(t.url || "")).length;
+const spaces = await listTaskSpaces();
+const personal = spaces.find((s) => s.name === 'personal') || spaces[0];
+const task = await taskSpace(personal.id ?? personal.spaceId);
+const cur = async () => fc(await task.tabs());
+console.log('A=' + (await cur()));
+const tabs = await task.tabs();
+const target = tabs.find((t) => /p1[.]html$/.test(t.url || ''));
+const page = target.label ? task.page(target.label) : await task.adopt(target.page);
+await page.goto(P + '/p1.html', { timeout: 20000 });
+console.log('B=' + (await cur()));
+const p3 = await task.newPage();
+await p3.goto(P + '/p3.html', { timeout: 20000 });
+console.log('C=' + (await cur()));
+await p3.close();
+console.log('D=' + (await cur()));
 `);
     const m = (k) => (out.match(new RegExp(`${k}=(\\d+)`)) || [])[1];
     check("A adopt lists 2 existing tabs", m("A"), 2);
     check("B reuse no duplicate", m("B"), 2);
-    check("C new tab tracked", m("C"), 3);
+    check("C new page tracked", m("C"), 3);
     check("D close only ours", m("D"), 2);
 
     // 5) --stop must NOT kill the externally-started browser

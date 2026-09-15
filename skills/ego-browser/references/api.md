@@ -1,6 +1,6 @@
-> **This reference documents the opt-in v2 harness** (`EGO_BROWSER_HARNESS=v2`,
-> `dist/out/index.v2.js`). The default v1 harness uses the facade documented in
-> [facade.md](facade.md) — e.g. `taskSpaces.useOrCreate(...)` / `browser.openOrReuseTab(...)`.
+> **This is the reference for the default harness** (upstream ego-browser v2.0.0,
+> `dist/out/index.v2.js`). The legacy v1 harness — selectable with
+> `EGO_BROWSER_HARNESS=v1` — uses the facade dialect in [facade.md](facade.md).
 
 # ego-browser v2 API reference
 

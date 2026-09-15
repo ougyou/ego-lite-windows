@@ -18,8 +18,9 @@
  *
  * Usage (same CLI as the vendored runtime):
  *   node scripts/ego-browser-launch.mjs nodejs <<'EOF'
- *   const task = await taskSpaces.useOrCreate('demo')
- *   await browser.openOrReuseTab('https://example.com')
+ *   const task = await taskSpace('demo')
+ *   const page = task.page('p1')
+ *   await page.goto('https://example.com')
  *   console.log(await page.snapshot())
  *   EOF
  *

@@ -1,15 +1,11 @@
 #!/usr/bin/env node
 /**
- * Opt-in v2 harness smoke test — proves the upstream ego-browser v2.0.0 bundle
- * (runtime/ego-browser/dist/out/index.v2.js) can drive a real page through this
- * runtime in ISOLATED mode.
+ * Legacy v1-harness smoke test — proves the opt-in v1 bundle
+ * (runtime/ego-browser/dist/out/index.js, EGO_BROWSER_HARNESS=v1) still drives
+ * a real page. The v1 harness speaks the facade dialect (taskSpaces/browser),
+ * see references/facade.md.
  *
- *   node scripts/verify-v2-engine.mjs
- *
- * v2 is opt-in (EGO_BROWSER_HARNESS=v2) because its Page abstraction cannot
- * drive pages in personal takeover mode yet — see runtime/PATCHES.md. This test
- * therefore runs with EGO_LINUX_PERSONAL=0 and uses the v2 script API
- * (taskSpace / task.page) rather than the default v1 facade.
+ *   node scripts/verify-v1-engine.mjs
  *
  * Exits 0 (PASS) or 1 (FAIL).
  */
@@ -22,18 +18,14 @@ const LAUNCHER = fileURLToPath(
   new URL("./ego-browser-launch.mjs", import.meta.url),
 );
 
-// A per-run space name: resuming a name whose Pages died with a previous
-// browser leaves a stale ledger entry in the v2 harness.
-const SPACE = `verify-v2-${Date.now()}`;
-
 const SCRIPT = `
-const task = await taskSpace(${JSON.stringify(SPACE)})
-console.log('SPACE_ID=' + task.spaceId)
-const page = task.page('p1')
-await page.goto('https://example.com', { timeout: 30000 })
-console.log('URL=' + (await page.url()))
-console.log('TITLE=' + (await page.title()))
-await task.finish({ keep: [] })
+const task = await taskSpaces.useOrCreate('verify-v1')
+console.log('SPACE_ID=' + task.id)
+await browser.openOrReuseTab('https://example.com', { wait: true, timeout: 30 })
+const info = await page.info()
+console.log('URL=' + info.url)
+console.log('TITLE=' + info.title)
+await taskSpaces.complete(task.id, { keep: false })
 `;
 
 function run() {
@@ -42,7 +34,7 @@ function run() {
       stdio: ["pipe", "pipe", "inherit"],
       env: {
         ...process.env,
-        EGO_BROWSER_HARNESS: "v2",
+        EGO_BROWSER_HARNESS: "v1",
         EGO_LINUX_PERSONAL: "0",
       },
     });
@@ -53,7 +45,7 @@ function run() {
   });
 }
 
-console.log("== ego-browser v2-harness smoke test ==");
+console.log("== ego-browser v1-harness smoke test ==");
 const { code, out } = await run();
 const hasUrl = /URL=https?:\/\/example\.com\//.test(out);
 const hasTitle = /TITLE=Example Domain/.test(out);
@@ -68,7 +60,7 @@ console.log(
 
 const ok = code === 0 && hasUrl && hasTitle && single;
 if (ok) {
-  console.log("PASS: v2 harness drives a real page on this machine (isolated mode)");
+  console.log("PASS: v1 harness drives a real page on this machine");
 } else {
   console.error(`FAIL: exit=${code} url=${hasUrl} title=${hasTitle} single=${single}`);
 }
