@@ -90,8 +90,11 @@ export async function connectCdp(wsUrl) {
   let attachedTargetId = null;
   let mouseWatcher = null;
   // Sessions the shim opened for its own reads. Their events belong to the
-  // shim, not to the harness.
+  // shim, not to the harness. A silent claim keeps the session's whole event
+  // stream shim-only; a non-silent claim still taps shimEvents but lets the
+  // harness see the stream too — for sessions the harness may end up sharing.
   const shimSessions = new Set();
+  const silentSessions = new Set();
   const shimEvents = new Map();
   let keyWatcher = null;
   let navWatcher = null;
@@ -173,12 +176,26 @@ export async function connectCdp(wsUrl) {
       return;
     }
 
-    // Events from a session the shim opened are the shim's business. Forwarding
-    // them would push them into the harness's event buffer, where drainEvents()
-    // hands them to the agent — a screencast alone would bury a task's real
-    // events under dozens of frames a second.
+    // A session the shim claimed is the shim's business for its event stream —
+    // forwarding a spaces-panel screencast would bury the task's real events
+    // under dozens of frames a second. Two things must still reach the harness:
+    //
+    //   Responses. Ids below INTERNAL_ID_BASE can only answer the harness (the
+    //   shim counts from INTERNAL_ID_BASE), and swallowing one hangs the
+    //   harness's caller for its whole timeout.
+    //
+    //   Non-silent claims' events. Chrome announces every attach on this
+    //   connection via Target.attachedToTarget once discovery is on, so the
+    //   harness registers — and then drives — the very session the cursor
+    //   overlay claimed (see createSessionResolver). Every event-based wait on
+    //   that shared page hangs unless the stream keeps flowing to the harness.
     if (data.sessionId && shimSessions.has(data.sessionId)) {
       shimEvents.get(data.method)?.(data.params || {}, data.sessionId);
+      const isResponse = typeof data.id === "number";
+      if (isResponse || !silentSessions.has(data.sessionId)) {
+        runtime?.onCDPMessage?.(text);
+        return;
+      }
       return;
     }
 
@@ -282,14 +299,23 @@ export async function connectCdp(wsUrl) {
 
     /**
      * Claim a session the shim opened, so its events stop at the shim.
+     * silent claims (the default) keep the session's whole stream shim-only —
+     * right for the spaces panel's screencast casts. A non-silent claim (the
+     * cursor overlay) taps shimEvents but still forwards the stream to the
+     * harness, because the harness can end up driving that same session.
+     * Responses are forwarded either way; see the routing comment above.
      * Sessions the harness opens are untouched and keep flowing to it.
      */
-    claimSession(sessionId) {
-      if (sessionId) shimSessions.add(sessionId);
+    claimSession(sessionId, { silent = true } = {}) {
+      if (!sessionId) return;
+      shimSessions.add(sessionId);
+      if (silent) silentSessions.add(sessionId);
+      else silentSessions.delete(sessionId);
     },
 
     releaseSession(sessionId) {
       shimSessions.delete(sessionId);
+      silentSessions.delete(sessionId);
     },
 
     /** Handle one CDP event method arriving on a claimed session. */

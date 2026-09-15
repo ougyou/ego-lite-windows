@@ -117,7 +117,10 @@ export function createCursorApi(cdp, { listTabs }) {
   async function watchLoads(sessionId) {
     if (!sessionId || watchedSessions.has(sessionId)) return;
     watchedSessions.add(sessionId);
-    cdp.claimSession?.(sessionId);
+    // Non-silent: the harness can end up driving this same session (Chrome
+    // announces every attach connection-wide, so the harness registers the
+    // cursor's session too) — its events must keep reaching the harness.
+    cdp.claimSession?.(sessionId, { silent: false });
     // Without Page.enable the load event never fires on this session. Failure is
     // cosmetic, exactly like every other render step here.
     await cdp.call("Page.enable", {}, sessionId).catch(() => {});
