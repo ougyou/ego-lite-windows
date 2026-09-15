@@ -13,6 +13,7 @@
   "scripts": {
     "verify": "node scripts/verify.mjs",
     "verify:personal": "node scripts/verify-personal.mjs",
+    "verify:v2": "node scripts/verify-v2-engine.mjs",
     "status": "node scripts/ego-browser-launch.mjs --status",
     "stop": "node scripts/ego-browser-launch.mjs --stop",
     "open": "node scripts/ego-browser-launch.mjs --open",
