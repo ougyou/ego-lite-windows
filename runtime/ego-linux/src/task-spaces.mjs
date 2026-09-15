@@ -582,7 +582,11 @@ export function createTaskSpacesApi(cdp) {
       );
       if (!space) {
         space = {
-          id: name,
+          // The v2 harness requires a numeric TaskSpace id. The personal space
+          // is still non-isolated (browserContextId: null) — the id is only a
+          // handle, but it must come from the same counter as real spaces.
+          id: state.nextId,
+          taskId: state.nextId,
           name,
           ownership: "agent",
           createdBy: "agent",
@@ -594,8 +598,15 @@ export function createTaskSpacesApi(cdp) {
           touchedAt: now,
           ...(hasRealContent ? { lastContentAt: now } : {}),
         };
+        state.nextId += 1;
         state.spaces.push(space);
       } else {
+        if (typeof space.id !== "number") {
+          // Migrate a record written before personal ids were numeric.
+          space.id = state.nextId;
+          space.taskId = state.nextId;
+          state.nextId += 1;
+        }
         space.browserContextId = null; // never let personal become isolated
         space.targetIds = ids;
         space.urls = defaultPages.map((t) => t.url);

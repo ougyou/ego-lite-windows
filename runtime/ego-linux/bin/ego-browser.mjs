@@ -296,11 +296,11 @@ async function main() {
   }
 
   // The skill documents `ego-browser nodejs <<'EOF'`; accept it as a no-op
-  // prefix. Handled after the --url / bare-URL forms so `--url <url> nodejs`
-  // and `<url> nodejs` both work — the prefix has to be stripped after those
-  // splice/shift the URL off the front, or it leaks into runMain (which rejects
-  // any leftover argv with the usage text).
-  if (argv[0] === "nodejs") argv.shift();
+  // prefix. Strip it wherever it appears (not just argv[0]) so flag orders like
+  // `--headless nodejs` and `nodejs --sdk-path <f> --headless` both work — the
+  // v2 harness runMain() rejects any leftover argv with the usage text.
+  const nodejsAt = argv.indexOf("nodejs");
+  if (nodejsAt !== -1) argv.splice(nodejsAt, 1);
 
   if (argv[0] === "--help" || argv[0] === "-h") {
     process.stdout.write(USAGE);
@@ -465,6 +465,11 @@ async function main() {
     }
     harness = pathToFileURL(path).href;
     rest.splice(sdkFlag, 2);
+  } else if ((process.env.EGO_BROWSER_HARNESS || "").toLowerCase() === "v2") {
+    // Opt-in upstream v2 harness (default is the v1 bundle). v2 is verified for
+    // ISOLATED mode; in personal takeover mode driving pages it creates hangs
+    // (see runtime/PATCHES.md), so it is not the default.
+    harness = new URL("../../ego-browser/dist/out/index.v2.js", import.meta.url).href;
   }
 
   // Site skills and learnings live in the repo's skill directory.
