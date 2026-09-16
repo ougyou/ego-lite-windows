@@ -14,11 +14,11 @@
     "verify": "node scripts/verify.mjs",
     "verify:personal": "node scripts/verify-personal.mjs",
     "verify:v1": "node scripts/verify-v1-engine.mjs",
-    "status": "node scripts/ego-browser-launch.mjs --status",
-    "stop": "node scripts/ego-browser-launch.mjs --stop",
-    "open": "node scripts/ego-browser-launch.mjs --open",
+    "status": "node runtime/ego-linux/bin/ego-browser.mjs --status",
+    "stop": "node runtime/ego-linux/bin/ego-browser.mjs --stop",
+    "open": "node runtime/ego-linux/bin/ego-browser.mjs --open",
     "setup:copilot": "scripts/install-copilot-skill.cmd",
-    "doctor": "node scripts/ego-browser-launch.mjs --status"
+    "doctor": "node runtime/ego-linux/bin/ego-browser.mjs --status"
   },
   "license": "MIT"
 }

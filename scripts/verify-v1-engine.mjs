@@ -14,8 +14,10 @@ import { fileURLToPath } from "node:url";
 import { enumerateOwnBrowserMainProcesses } from "../runtime/ego-linux/src/chrome.mjs";
 import { PROFILE_DIR } from "../runtime/ego-linux/src/paths.mjs";
 
+// The runtime bin directly (single node process); it detects Windows
+// browsers itself, so the launcher hop is unnecessary.
 const LAUNCHER = fileURLToPath(
-  new URL("./ego-browser-launch.mjs", import.meta.url),
+  new URL("../runtime/ego-linux/bin/ego-browser.mjs", import.meta.url),
 );
 
 const SCRIPT = `

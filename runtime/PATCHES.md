@@ -32,6 +32,15 @@ node scripts/build.mjs         # 产物 dist/out/index.js（约 800K）→ 复�
 
 | `runtime/ego-linux/src/chrome.mjs` | `stopBrowser()` 在状态文件缺失/失效时**兜底枚举本 profile 的活主进程并终止**（`enumerateOwnBrowserMainProcesses` → `terminateTree`，二者都带归属校验，绝不误伤用户自己的浏览器）；`--stop` 成功关停后**清掉 space 台账** `task-spaces.json` | 修复本仓自带回归测试的既有失败（**未改动的 HEAD 上 `scripts/verify-single-instance.mjs` 的 S4/S5 就会失败**，2026-09-15 实证）：① 两个冷启动竞争同一 profile 时，落败方的清理会删掉 `browser.json`，此时 `--stop` 只认状态文件 → 浏览器活着却停不掉且失去句柄；② 浏览器已停但台账里的 space 仍记着已失效的 `browserContextId`/`targetId`，下次冷启动续用同名 space 会失败（`verify-personal` 与单实例测试均覆盖）。修后 `verify-single-instance` 全绿 |
 
+### 2026-09-16：性能修复（bin 直连 + 枚举缓存）
+
+| 文件 | 改动 | 原因（含实测修正） |
+|---|---|---|
+| `bin/ego-browser.cmd`、`package.json`、`scripts/verify*.mjs` | 入口直连 `runtime/ego-linux/bin/ego-browser.mjs`（单 Node 进程）。原先 `bin → node launcher → node runtime` 双 Node 启动；runtime 自带 Windows 浏览器探测（`windowsBrowserCandidates`）与 workspace 设置、`--headless` 参数也原生处理，launcher 四项职责全部冗余。`scripts/ego-browser-launch.mjs` 保留未删（兼容显式调用），但 bin/npm scripts/verify 全部不再经过它 | Windows 一次 Node 启动实测 ~400ms（Defender 扫描加成），双跳多付 ~200ms/次。实测 warm 轻调用 **790ms → 590ms（-25%）**。注：最初预估"省 1.5s"系脚本内容混淆（对比项里一个带整页加载一个不带），实测修正为 ~200ms |
+| `runtime/ego-linux/src/chrome.mjs` | `enumerateOwnBrowserMainProcesses()` 增加同进程 **1.5s TTL 缓存**（按 profileDir 键控，POSIX 不缓存）；`terminateTree()` 杀进程与 `launch()` spawn 之后主动失效缓存 | PowerShell+CIM 单次 ~1.2s。冷启动干净路径本就只枚举 1 次（实测冷启动 ~10s 不变，由 Chrome 启动 + 端口稳定延迟 1.5s 主导），缓存的收益在**多次枚举场景**：`--stop` 兜底循环逐进程校验归属、personal 模式多端口探测、回归测试密集 `countOwn`——合并为一次扫描 |
+
+**性能归因（实测，沙箱 + 真机）**：每次调用固定开销 ≈ Node 启动 400ms + 连接/attach/域启用 ~200ms，warm 轻调用 590ms 是当前"每次 heredoc 一个新进程"架构的地板；冷启动 ~10s 由 Chrome 启动 + 1.5s 端口稳定延迟主导。macOS 快的本质是 app 内常驻连接（无每次握手、无发现/枚举防护）。质变需要常驻连接/daemon 模式，另行立项。
+
 ### 原有改动（相对 vendored 基线）
 
 | 文件 | 改动 | 原因 / 提交 |

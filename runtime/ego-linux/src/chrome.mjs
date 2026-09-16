@@ -594,6 +594,8 @@ async function launch({ headless }) {
     stdio: "ignore",
   });
   child.unref();
+  // A spawn changes the process population the enumeration cache describes.
+  invalidateOwnBrowserProcessCache();
 
   // Fixed port: probe it directly (Chrome doesn't write DevToolsActivePort for
   // a fixed port on this Chrome build). Port 0 fallback still reads the file.
@@ -816,8 +818,25 @@ async function waitForProcessExit(pid, timeoutMs = 5000) {
  * rather than a renderer/helper (which add --type=). Returns [] on POSIX, where
  * the original /proc-based paths still apply.
  */
-export async function enumerateOwnBrowserMainProcesses(profileDir) {
+export async function enumerateOwnBrowserMainProcesses(
+  profileDir,
+  { maxAgeMs = 1500 } = {},
+) {
   if (process.platform !== "win32") return [];
+  // The PowerShell+CIM scan costs over a second on Windows, and one CLI run
+  // consults it several times in quick succession (launch guard, orphan reap,
+  // lock clearing, status fallback). Collapse those into a single scan: a
+  // short-lived in-process answer is what those guards already tolerate —
+  // cross-process races are serialized by the launch lock instead. Anything
+  // that changes the process population (a kill, a spawn) invalidates it.
+  const cacheKey = String(profileDir || "").replace(/\\/g, "/").toLowerCase();
+  const now = Date.now();
+  if (
+    ownProcessCache.key === cacheKey &&
+    now - ownProcessCache.at <= maxAgeMs
+  ) {
+    return ownProcessCache.value;
+  }
   try {
     const r = spawnSync(
       "powershell",
@@ -828,18 +847,30 @@ export async function enumerateOwnBrowserMainProcesses(profileDir) {
       ],
       { encoding: "utf8", timeout: 10_000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
     );
-    if (r.status !== 0) return [];
+    if (r.status !== 0) {
+      invalidateOwnBrowserProcessCache();
+      return [];
+    }
     const parsed = JSON.parse(r.stdout || "[]");
     const list = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [];
     const dir = profileDir.replace(/\\/g, "/").toLowerCase();
-    return list
+    const value = list
       .filter((p) => p && typeof p.CommandLine === "string")
       .filter((p) => p.CommandLine.toLowerCase().replace(/\\/g, "/").includes(dir))
       .map((p) => ({ pid: Number(p.ProcessId), cmdline: p.CommandLine }));
+    ownProcessCache = { key: cacheKey, at: now, value };
+    return value;
   } catch {
+    invalidateOwnBrowserProcessCache();
     return [];
   }
 }
+
+/** Drop the cached enumeration answer; call after anything spawns or kills. */
+export function invalidateOwnBrowserProcessCache() {
+  ownProcessCache = { key: null, at: 0, value: [] };
+}
+let ownProcessCache = { key: null, at: 0, value: [] };
 
 async function ownsOurProfileOnWindows(pid, profileDir) {
   const live = await enumerateOwnBrowserMainProcesses(profileDir);
@@ -864,6 +895,8 @@ async function terminateTree(pid, profileDir) {
         ["/PID", String(Number(pid)), "/T", "/F"],
         { stdio: "ignore", timeout: 10_000, windowsHide: true },
       );
+      // A kill changes the process population the enumeration cache describes.
+      invalidateOwnBrowserProcessCache();
       return r.status === 0;
     } catch {
       return false;
